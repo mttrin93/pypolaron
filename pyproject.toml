@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pypolaron"
+description = "Toolkit for automated polaron calculations"
+readme = "README.md"
+requires-python = ">=3.7"
+license = "MIT"
+license-files = ["LICENSE.md"]
+authors = [
+    {name = "Matteo Rinaldi", email = "mrinaldi@fhi-berlin.mpg.de"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent"
+]
+dependencies = [
+    "numpy",
+    "ase",
+    "matscipy",
+    "pymatgen",
+    "pymatgen-analysis-defects",
+]
+dynamic = ["version"]
+
+[tool.setuptools.dynamic]
+version = {attr = "pypolaron.__version__"}
+
+#[tool.setuptools]
+#package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pypolaron", "pypolaron.*"]

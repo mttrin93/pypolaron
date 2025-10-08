@@ -1,0 +1,4 @@
+outputs/
+.idea/
+pypolaron.egg-info
+__pycache__/

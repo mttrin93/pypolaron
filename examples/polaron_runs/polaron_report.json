@@ -1,0 +1,11 @@
+{
+  "planned": {
+    "pristine_dir": "polaron_runs/pristine",
+    "charged_dir": "polaron_runs/charged",
+    "pristine_script": "polaron_runs/pristine/run_aims.sh",
+    "charged_script": "polaron_runs/charged/run_aims.sh",
+    "instructions": "Run the scripts in the respective directories to perform calculations.",
+    "submitted": false
+  },
+  "analysis_status": "Aims outputs not found; run calculations first."
+}

@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, Tuple, List, Optional, Union
 
 from pymatgen.core import Structure
 from pymatgen.analysis.bond_valence import BVAnalyzer
@@ -9,17 +9,22 @@ from pyfhiaims.geometry import AimsGeometry
 from pyfhiaims.control import AimsControl
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.vasp.sets import MPRelaxSet
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from ase import Atoms
 import numpy as np
 import shutil
 import os
 from pathlib import Path
 import warnings
+
 warnings.filterwarnings("ignore", message="Won't overwrite species")
 
 
 class PolaronGenerator:
-    def __init__(self, structure: Structure, polaron_type="electron"):
+    """
+    Class for proposing small polaron localization sites in a crystal structure.
+    """
+    def __init__(self, structure: Structure, polaron_type: str = "electron"):
         """
         structure : pymatgen Structure
         polaron_type : "electron" (extra electron) or "hole" (missing electron)
@@ -27,15 +32,33 @@ class PolaronGenerator:
         self.structure = structure.copy()
         self.polaron_type = polaron_type
         self.oxidation_assigned = False
-        self.cnn = CrystalNN()
+        self.crystal_near_neighbors = CrystalNN()
 
     def assign_oxidation_states(self):
         """Assign oxidation states using Bond Valence Analyzer."""
-        bva = BVAnalyzer()
-        self.structure = bva.get_oxi_state_decorated_structure(self.structure)
+        bond_valence_analyzer = BVAnalyzer()
+        self.structure = bond_valence_analyzer.get_oxi_state_decorated_structure(self.structure)
         self.oxidation_assigned = True
 
-    def propose_sites(self, max_sites=5):
+    def _get_symmetrically_distinct_sites(self) -> List[int]:
+        """
+        Filters the structure sites to return a list of indices
+        for only the symmetrically distinct sites.
+        """
+        sga = SpacegroupAnalyzer(self.structure)
+        equivalent_indices = sga.get_symmetry_dataset().equivalent_atoms
+
+        seen_representatives_indices = set()
+        distinct_site_indices = []
+
+        for i, rep_index in enumerate(equivalent_indices):
+            if rep_index not in seen_representatives_indices:
+                distinct_site_indices.append(i)
+                seen_representatives_indices.add(rep_index)
+
+        return distinct_site_indices
+
+    def propose_sites(self, max_sites: int = 5) -> List[Tuple[int, str, Optional[float], float, float]]:
         """
         Propose candidate sites for polaron localization.
         Returns list of tuples: (site_index, element, oxidation_state, coordination_number, score)
@@ -43,47 +66,56 @@ class PolaronGenerator:
         if not self.oxidation_assigned:
             self.assign_oxidation_states()
 
-        # cnn = CrystalNN()
+        distinct_indices = self._get_symmetrically_distinct_sites()
+
         candidates = []
 
-        for i, site in enumerate(self.structure.sites):
+        for index in distinct_indices:
+            site = self.structure.sites[index]
             element = site.specie.symbol
             oxidation_state = site.specie.oxi_state
-            coordination_number = self.cnn.get_cn(self.structure, i)
+            coordination_number = self.crystal_near_neighbors.get_cn(self.structure, index)
 
             score = self._score_site(element, oxidation_state, coordination_number)
             if score > 0:  # only keep plausible candidates
-                candidates.append((i, element, oxidation_state, coordination_number, score))
+                candidates.append((index, element, oxidation_state, coordination_number, score))
 
         # sort by score (higher = more likely polaron site)
         candidates.sort(key=lambda x: -x[4])
         return candidates[:max_sites]
 
-    def _score_site(self, element, oxidation_state, coordination_number):
+    def _score_site(self, element: str, oxidation_state: float, coordination_number: float) -> float:
         """
-        Simple heuristic scoring:
-        - electron polaron: reducible high-ox cations (Ti4+, Fe3+, Mn4+ ...) with low coordination
-        - hole polaron: anions with -2 (like O2-) with low coordination
-        - included Pauli electronegativity differences
+        Simple heuristic scoring that incorporates both structural and electronic information:
+        - oxidation states (high/low for electron/hole polarons, i.e. Ti4+, Fe3+, Mn4+ .../O2-)
+        - low coordination numbers
+        - Pauli electronegativity differences
+        - Madelung potential (high positive/low negative for electron/hole polarons)
+        - ionization potentials/electron affinities
         """
-        # TODO:
-        # 1) add scoring contributions based on Madelung potential (high potential more likely to host polarons)
-        # 2)
-        score = 0.
         elem = Element(element)
+        base_charge_score = abs(oxidation_state) * 2.
+
+        # Structural factor: Penalty for ideal coordination, bonus for 'strain' (undercoordination)
+        # Use simple ideal CNs for common coordination geometries (e.g., 6 for octahedral, 4 for tetrahedral)
+        # This is a bit rough, but better than a fixed constant.
+        ideal_cn = 6.0
+        structural_factor = max(0., ideal_cn - coordination_number) * 0.5
+        score = base_charge_score + structural_factor
+
         if self.polaron_type == "electron":
-            if oxidation_state >= +3:  # cations in high oxidation state
-                score += oxidation_state * 2.
-                score += max(0., 6. - coordination_number) * 0.5  # undercoordination bonus
-                score += (4. - elem.X) * 0.5  # lower electronegativity = more reducible
+            if oxidation_state < 2:
+                return 0.
+            electronic_factor = (4. - elem.X) * 0.5  # lower electronegativity = more reducible
+            score += electronic_factor
         elif self.polaron_type == "hole":
-            if oxidation_state <= -2:  # anions in low oxidation state
-                score += abs(oxidation_state) * 2.
-                score += max(0., 4. - coordination_number) * 0.5
-                score += elem.X * 0.5  # higher electronegativity = better hole host
+            if oxidation_state > -1:
+                return 0.
+            electronic_factor = elem.X * 0.5  # higher electronegativity = better hole host
+            score += electronic_factor
         return score
 
-    def _find_central_site_general_supercell(self, scell, site_index):
+    def _find_central_site_general_supercell(self, scell: Structure, site_index: Union[int, List[int]]) -> List[int]:
         """
         Find the index of the atom in the supercell corresponding to
         a primitive cell site, located closest to the geometric center.
@@ -108,7 +140,8 @@ class PolaronGenerator:
 
         return mapped_indices
 
-    def _create_magmoms(self, scell, site_index, spin_moment):
+    def _create_magmoms(self, scell: Structure, site_index: Union[int, List[int]], spin_moment: float
+                        ) -> Tuple[List[int], np.ndarray]:
         """
         Initialize the initial magmoms
         """
@@ -118,8 +151,9 @@ class PolaronGenerator:
         magmoms[site_index_supercell] = spin_moment
         return site_index_supercell, magmoms
 
-    def prepare_for_ase(self, site_index, supercell=(2, 2, 2),
-                        spin_moment=1.0, total_charge=0, set_site_magmoms=True):
+    # TODO: here the additional argument set_site_magmoms should give the possibility between a polaronic or pristine calculation
+    def prepare_for_ase(self, site_index: Union[int, List[int]], supercell: Tuple[int, int, int] = (2, 2, 2),
+                        spin_moment: float = 1.0, total_charge: int = 0, set_site_magmoms: bool = True) -> Atoms:
         """
         Build ASE Atoms supercell and attach initial magnetic moments and metadata.
         Returns ASE Atoms instance ready to pass to ASE calculators or to be written out.
@@ -140,8 +174,8 @@ class PolaronGenerator:
 
         return ase_atoms
 
-    def write_vasp_input_files(self, site_index, supercell=(2, 2, 2),
-                              spin_moment=1.0, outdir="polaron_calc"):
+    def write_vasp_input_files(self, site_index: Union[int, List[int]], supercell: Tuple[int, int, int] = (2, 2, 2),
+                              spin_moment: float = 1.0, outdir: str = "polaron_calc"):
         """
         Generate a supercell with a seeded polaron (localized spin on chosen site).
 
@@ -196,10 +230,11 @@ class PolaronGenerator:
         vis = MPRelaxSet(scell, user_incar_settings=user_incar)
         vis.write_input(outdir, potcar_spec=True)
 
-    def write_fhi_aims_input_files(self, site_index, supercell=(2, 2, 2),
-                              add_charge=None, spin_moment=1.0,
-                              xc="hse06", tier="tight", species_dir='./',
-                              outdir='./fhi_aims_files'):
+    # TODO: add the possibility between choosing to inject or not magnetic moments in the geometry file
+    def write_fhi_aims_input_files(self, site_index: Union[int, List[int]], supercell: Tuple[int, int, int] = (2, 2, 2),
+                              add_charge: Optional[float] = None, spin_moment: float = 1.0,
+                              xc: str = "hse06", tier: str = "tight", species_dir: str = './',
+                              outdir: str = './fhi_aims_files'):
         """
         Write a simple FHI-aims 'geometry.in' and 'control.in' that:
         - builds the supercell geometry

@@ -8,6 +8,24 @@ import json
 from pypolaron.polaron_generator import PolaronGenerator
 from pypolaron.polaron_analyzer import PolaronAnalyzer
 
+# TODO: When seeding multiple polarons, be careful about total charge and spin multiplicity:
+#  two electrons can pair up (singlet) or remain as separate spins — seed spin moments with the sign you want (e.g., both +1.0 for triplet-like initial guess). Check the final spin in aims.out.
+# TODO: Always check supercell convergence (formation energy vs cell size). The FNV/Makov–Payne corrections are approximations — don't rely just on a single cell.
+# TODO: Use actual Bader (Henkelman) for accurate charges. The sphere-integration fallback is handy for quick checks but not production-quality.
+
+# TODO: next implementations:
+#  Goal: Extract physical insights: polaron formation energies, interaction, and thermodynamic properties.
+#  Algorithmic steps:
+#  Polaron formation energy tables for single/multiple polarons.
+#  Interaction energies for multi-polaron systems:
+#  Thermodynamic modeling:
+#  Boltzmann statistics for occupancy at finite T.
+#  Free energies for hopping pathways.
+#  Visualizations:
+#  Charge density isosurfaces, polaron–polaron distance maps, formation energy histograms.
+
+# TODO: have a look at vibes and high-throughput ams-tools for examples how to deal with submission queues in AIMS
+
 class PolaronWorkflow:
     def __init__(self, aims_executable_command: str, epsilon: Optional[float] = None,
                  fermi_energy: float = 0.0, volume_ang3: Optional[float] = None):
@@ -48,9 +66,9 @@ class PolaronWorkflow:
         return str(script_path)
 
     def run_polaron_workflow(self,
-                             polgen: Optional[PolaronGenerator],
-                             chosen_site_indices: List[int],
-                             supercell=(2, 2, 2),
+                             generator: Optional[PolaronGenerator],
+                             chosen_site_indices: Union[int, List[int]],
+                             supercell: Tuple[int, int, int] = (2, 2, 2),
                              add_charge: int = -1,
                              spin_moments: float = None,
                              run_dir_root: str = "polaron_runs",
@@ -59,7 +77,7 @@ class PolaronWorkflow:
                              do_bader: bool = True,
                              potential_axis: int = 2,
                              dielectric_eps: float = 10.0,
-                             auto_analyze: bool = True) -> Dict:
+                             auto_analyze: bool = True) -> Dict[str, Union[str, float]]:
         """
         High-level orchestrator for polaron calculations + optional analysis.
         auto_analyze: if True, calls PolaronAnalyzer if outputs exist
@@ -77,11 +95,11 @@ class PolaronWorkflow:
         # Write pristine inputs (no added charge)
         # TODO: add functionality where the write_fhi_aims method recongnize if there are polarons or not, here
         # is adding unecessary magnetic moment to the chose_site_indices atoms
-        polgen.write_fhi_aims_input_files(site_index=chosen_site_indices, supercell=supercell, add_charge=0.,
-                                          species_dir=species_dir, outdir=pristine_dir)
+        generator.write_fhi_aims_input_files(site_index=chosen_site_indices, supercell=supercell, add_charge=0.,
+                                             species_dir=species_dir, outdir=str(pristine_dir))
         # Write charged inputs
-        polgen.write_fhi_aims_input_files(site_index=chosen_site_indices, supercell=supercell, add_charge=add_charge,
-                                     species_dir=species_dir, outdir=charged_dir)
+        generator.write_fhi_aims_input_files(site_index=chosen_site_indices, supercell=supercell, add_charge=add_charge,
+                                             species_dir=species_dir, outdir=str(charged_dir))
 
         # 2) Write job scripts
         script_pr = self.write_simple_job_script(pristine_dir)
@@ -114,11 +132,13 @@ class PolaronWorkflow:
                                            volume_ang3=self.volume_ang3)
 
                 # Automatically find outputs
+                # TODO: add here reading of spin cube files
                 pristine_out = pristine_dir / "aims.out"
                 charged_out = charged_dir / "aims.out"
                 potential_cube_pristine = pristine_dir / "potential.cube"
                 potential_cube_charged = charged_dir / "potential.cube"
 
+                # TODO: here we calculate polaron formation energies and corrections
                 if pristine_out.exists() and charged_out.exists():
                     results = analyzer.analyze_polaron_run(
                         pristine_out=str(pristine_out),

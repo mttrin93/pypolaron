@@ -9,6 +9,9 @@ from pymatgen.io.ase import AseAtomsAdaptor
 from typing import Dict, Tuple, Optional, Union
 from pathlib import Path
 from ase import Atoms
+import warnings
+
+HARTREE_TO_EV = 27.211386245988
 
 class FormationEnergyCalculator:
     def __init__(self, total_charge: int, fermi_energy: float, epsilon: Optional[float] = None, volume_ang3: Optional[float] = None):
@@ -54,7 +57,8 @@ class FormationEnergyCalculator:
 
     # TODO: to improve, have a look at https://doped.readthedocs.io/en/latest/doped.corrections.html and
     #https://doped.readthedocs.io/en/latest/_modules/doped/corrections.html#get_freysoldt_correction
-    # TODO: implement other corrections: Kumagai, Falletta
+    # TODO: implement other corrections: Kumagai (requires full anisotropic dielectric tensor and arbitraty supercell shapes), Falletta
+    # TODO: the corrections should be fully compatible with multi-polaronic configurations
     def get_freysoldt_correction_from_aims_cubes(self,
                                                  pristine_cube_path: str,
                                                  charged_cube_path: str,
@@ -65,7 +69,7 @@ class FormationEnergyCalculator:
                                                  # filename_plot: Optional[str] = None,
                                                  # verbose: bool = True,
                                                  **kwargs
-                                                 ) -> Dict:
+                                                 ) -> Dict[str, Union[float, dict]]:
         """
         Wrapper to compute Freysoldt correction (FNV) using pymatgen, from Gaussian cube files.
 
@@ -104,14 +108,18 @@ class FormationEnergyCalculator:
         with open(file_charged_cube, "r") as f:
             charged_cube = read_cube(f)
 
+        assert pristine_cube["data"].shape == charged_cube["data"].shape, \
+            "Pristine and charged cube grids must match"
+
         # Build "Locpot-like" objects (pymatgen expects potential grids)
+        # TODO: check if the conversion here from Hartree to eV makes sense
         locpot_bulk = Locpot(
             poscar=Poscar(structure),
-            data={"total": pristine_cube['data']},
+            data={"total": pristine_cube['data'] * HARTREE_TO_EV},
         )
         locpot_defect = Locpot(
             poscar=Poscar(structure),
-            data={"total": charged_cube['data']},
+            data={"total": charged_cube['data'] * HARTREE_TO_EV},
         )
 
         # --- Call pymatgen FNV correction ---

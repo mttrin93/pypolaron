@@ -11,6 +11,11 @@ import os
 
 from pypolaron.formation_energy_calculator import FormationEnergyCalculator
 
+
+# TODO: add functionality to check if the localization on single atoms was successful, for instance:
+#  1) check variations in Bader charges
+#  2) use formation energies to rank stable polaron sites
+
 class PolaronAnalyzer:
     """
     High-level analyzer for FHI-aims polaron calculations.
@@ -128,6 +133,8 @@ class PolaronAnalyzer:
 
         return data, origin, axes, number_of_atoms, atom_list
 
+    # TODO: run Bader on spin densities
+    # TODO: add a mapping, sometimes the order of the atoms in ACF.dat is not the same as in the pymatgen structure!!!
     def run_bader(self,
                   charge_density_path: str,
                   output_dir: Optional[str] = None,
@@ -246,7 +253,8 @@ class PolaronAnalyzer:
         return float(ipr)
 
     # TODO: CHECK THIS FUNCTION
-    def potential_alignment(self, neutral_pot_cube: str, charged_pot_cube: str,
+    def potential_alignment(self, neutral_pot_cube: str,
+                            charged_pot_cube: str,
                             atom_coords: np.ndarray,
                             exclude_radius: float = 2.0) -> float:
         """

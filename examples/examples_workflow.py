@@ -21,6 +21,7 @@ workflow = PolaronWorkflow(aims_executable_command ='mpirun -np 24 /path/to/aims
 workdir = Path('./')
 workflow.write_simple_job_script(workdir)
 
-workflow.run_polaron_workflow(polgen=pg_e, chosen_site_indices=best_sites,
-                              species_dir='/home/rinaldi/Documents/programs/FHIaims/species_defaults/defaults_2020/tight')
+report = workflow.run_polaron_workflow(generator=pg_e, chosen_site_indices=best_sites,
+                                       species_dir='/home/rinaldi/Documents/programs/FHIaims/species_defaults/defaults_2020/tight')
 
+print(report)

@@ -19,7 +19,7 @@ def check_polaron_sites(candidates: List[Tuple], expected_elements: List[str]):
         f"Top polaron candidate element '{top_element}' not in expected list {expected_elements}"
 
     print(
-        f"\nTop Candidate: {candidates[0][1]}{candidates[0][2]:.1f}+, CN={candidates[0][3]:.1f}, Score={candidates[0][4]:.2f}")
+        f"\nTop Candidate: {candidates[0][1]}^{candidates[0][2]:.1f}, CN={candidates[0][3]:.1f}, Score={candidates[0][4]:.2f}")
 
     # Check if the next few candidates also adhere to the expected element type
     for i, candidate in enumerate(candidates):
@@ -115,3 +115,28 @@ def test_symmetry_filtering(symmetry_test_structure: Structure):
         # If BVA fails, the scoring is less meaningful, but the *length* check is key.
         # Since BVA fails, it sets ox_state=0, and the score is 0, returning [].
         assert len(candidates) == 0 or len(candidates) == 1, "Propose sites should not generate more than 1 candidate."
+
+def test_electron_polaron_lto(lto_aims_structure: Structure):
+    """
+    Test Electron Polaron LiTiO.
+    Expected localization: Ti4+ -> Ti3+ (Cation site).
+    """
+    pg_e = PolaronGenerator(lto_aims_structure, polaron_type="electron")
+    candidates = pg_e.propose_sites(max_sites=10)
+
+    assert pg_e.oxidation_assigned is True, "BVA failed to assign oxidation states for TiO2."
+    assert len(candidates) > 0, "Electron Polaron generator returned no sites for TiO2."
+
+    # Expect Ti sites to dominate the scoring
+    check_polaron_sites(candidates, ["Ti"])
+
+    # Check that the number of distinct candidates is small (only the one Ti site)
+    # The Ti site should score highly, and the O sites should score 0.
+    ti_candidates = [c for c in candidates if c[1] == "Ti"]
+    o_candidates = [c for c in candidates if c[1] == "O"]
+    li_candidates = [c for c in candidates if c[1] == "Li"]
+
+    assert len(ti_candidates) > 1, "there are several Ti inequivalent sites in LTO, not just one."
+    assert all(c[4] > 0 for c in ti_candidates), "Ti site score should be positive."
+    assert len(o_candidates) == 0, 'electron polarons do not localize on oxygen atoms in LTO'
+    assert len(li_candidates) == 0, 'electron polarons do not localize on lithium atoms in LTO'

@@ -2,6 +2,8 @@ import pytest
 from pymatgen.core.structure import Structure
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.composition import Composition
+from pyfhiaims.geometry import AimsGeometry
+from pathlib import Path
 
 # This fixture provides a Rutile TiO2 structure (Electron Polaron host)
 @pytest.fixture(scope="session")
@@ -63,3 +65,15 @@ def symmetry_test_structure():
         [0.5, 0.5, 0.5],
     ]
     return Structure(lattice, species, coords)
+
+# --- Fixture to read the AIMS file ---
+@pytest.fixture(scope="session")
+def lto_aims_structure():
+    """
+    Reads the mock aims_structure.in file using pymatgen's file parser.
+    """
+    data_dir = Path(__file__).parent / "data"   # points to tests/data/
+    aims_filepath = data_dir / "geometry.in"
+
+    # Parse the file using pymatgen
+    return AimsGeometry.from_file(aims_filepath).structure

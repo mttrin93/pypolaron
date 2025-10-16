@@ -12,6 +12,7 @@ from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.vasp.sets import MPRelaxSet
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from ase import Atoms
+from collections import Counter
 import numpy as np
 import shutil
 import os
@@ -162,7 +163,6 @@ class PolaronGenerator:
         scell_center = np.mean([site.coords for site in scell.sites], axis=0)
         used_indices = set()
         mapped_indices = []
-        tolerance = 1e-4
 
         for index in site_index:
             target_specie = self.structure[index].specie
@@ -251,13 +251,17 @@ class PolaronGenerator:
 
         return ase_atoms
 
+    # TODO: we should write functions to estimate the HFSCREEN (=alpha) parameter of hse06 via pasquarello
+    # TODO: we should write functions to estimate the DFT+U parameters via pasquarello
     def write_vasp_input_files(
         self,
         site_index: Union[int, List[int]],
         supercell: Tuple[int, int, int] = (2, 2, 2),
         spin_moment: float = 1.0,
         set_site_magmoms: bool = True,
-        outdir: str = "polaron_calc",
+        calc_type: str = 'relax',
+        functional: str = 'hse06',
+        outdir: str = "polaron_vasp_calc",
     ):
         """
         Generate a supercell with a seeded polaron (localized spin on chosen site).
@@ -291,24 +295,48 @@ class PolaronGenerator:
             site_index_supercell = self._find_central_site_general_supercell(scell, site_index)
 
         total_charge = self._get_total_charge(scell, site_index_supercell)
-        nelect = scell.get_nelectrons() - total_charge
+        nelect = sum(site.specie.Z for site in scell) - total_charge
 
         user_incar = {
-            # Total number of electrons: adjust for polaron
             "NELECT": nelect,
-            # Spin polarization
             "ISPIN": 2,
-            # Turn off DFT+U
-            "LDAU": False,
-            # Hybrid functional settings (HSE06)
-            "LHFCALC": True,  # Enable hybrid functional
-            "HFSCREEN": 0.2,  # Screening parameter for HSE06
-            "AEXX": 0.25,  # Fraction of exact exchange
-            "ALGO": "All",  # Recommended for hybrids
-            "PREC": "Accurate",  # High precision
-            "NELM": 200,  # Maximum electronic steps
-            "EDIFF": 1e-5,  # Convergence for electronic loop
+            "MAGMOM": Counter(scell.site_properties.get("magmom", None)),
+            "EDIFF": 1e-5,
+            "NELM": 200,
+            "PREC": "Accurate",
         }
+
+        # add calculation type settings
+        if calc_type.lower() == 'scf':
+            user_incar["NSW"] = 0
+            user_incar["IBRION"] = -1
+        # relax-all: both atoms and cell, relax-atoms: atoms only
+        elif calc_type.lower() == "relax-atoms" or calc_type.lower() == "relax-all":
+            user_incar["NSW"] = 99
+            user_incar["IBRION"] = 2
+        elif calc_type.lower() == "relax-all":
+            user_incar["ISIF"] = 3
+
+        # add functional-specific settings
+        if functional.lower() == "hse06":
+            user_incar.update({
+                "LHFCALC": True,  # Enable hybrid functional
+                "HFSCREEN": 0.2,  # Screening parameter for HSE06
+                "AEXX": 0.25,  # Fraction of exact exchange
+                "ALGO": "All",  # Recommended for hybrids
+            })
+            user_incar["LDAU"] = False # turn off DFT+U with HSE
+        elif functional.lower() == "pbeu":
+            user_incar.update({
+                "LDAU": True,
+                "LDAUTYPE": 2,  # Common DFT+U setting
+                "LDAUL": [0, -1, 2, 3],  # Example L values
+                "LDAUU": [0, 0, 5.0, 0],  # Example U values (Requires user to set these carefully!)
+                "LMAXMIX": 4,
+            })
+        else: # plain PBE
+            user_incar["LDAU"] = False
+            user_incar["LHFCALC"] = False
 
         vis = MPRelaxSet(scell, user_incar_settings=user_incar)
         vis.write_input(outdir, potcar_spec=True)
@@ -318,10 +346,11 @@ class PolaronGenerator:
         site_index: Union[int, List[int]],
         supercell: Tuple[int, int, int] = (2, 2, 2),
         spin_moment: float = 1.0,
-        xc: str = "hse06",
+        set_site_magmoms: bool = True,
+        calc_type: str = "relax",
+        functional: str = "hse06",
         tier: str = "tight",
         species_dir: str = "./",
-        set_site_magmoms: bool = True,
         outdir: str = "./fhi_aims_files",
     ):
         """
@@ -339,7 +368,6 @@ class PolaronGenerator:
         #  2) perform calculations with only DFT+U, add functionality to write occupation matrix control
         #  3) firstly perform DFT+U with occ matrix control, then hybrid
         #  4) firstly perform hybrid calculation with atom with one extra electron placed on the electron polaron position, then a second hybrid with the original config
-        #  add possibility to choose between relaxation or just scf run
         #  add here the possibility to have electron and hole polarons at the same time (maybe useful?)
 
         outdir = Path(outdir)
@@ -370,7 +398,7 @@ class PolaronGenerator:
 
         # Build basic control.in using AimsControlIn
         params = {
-            "xc": xc,
+            "xc": functional,
             "species_defaults": species_defaults,
             "species_dir": species_dir,
             "k_grid": "1 1 1",

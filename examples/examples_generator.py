@@ -20,3 +20,5 @@ print("best sites", candidates_e[0][0])
 pg_e.write_fhi_aims_input_files(best_sites, set_site_magmoms=False,
                             species_dir='/home/rinaldi/Documents/programs/FHIaims/species_defaults/defaults_2020/tight')
 
+pg_e.write_vasp_input_files(best_sites)
+

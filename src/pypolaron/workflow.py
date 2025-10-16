@@ -26,16 +26,27 @@ from pypolaron.polaron_analyzer import PolaronAnalyzer
 
 # TODO: have a look at vibes and high-throughput ams-tools for examples how to deal with submission queues in AIMS
 
+
 class PolaronWorkflow:
-    def __init__(self, aims_executable_command: str, epsilon: Optional[float] = None,
-                 fermi_energy: float = 0.0, volume_ang3: Optional[float] = None):
+    def __init__(
+        self,
+        aims_executable_command: str,
+        epsilon: Optional[float] = None,
+        fermi_energy: float = 0.0,
+        volume_ang3: Optional[float] = None,
+    ):
         self.aims_executable_command = aims_executable_command
         self.epsilon = epsilon
         self.fermi_energy = fermi_energy
         self.volume_ang3 = volume_ang3
 
-    def write_simple_job_script(self, workdir: Path, nthreads: int = 8, walltime: str = "02:00:00",
-                                scheduler: Optional[str] = None) -> str:
+    def write_simple_job_script(
+        self,
+        workdir: Path,
+        nthreads: int = 8,
+        walltime: str = "02:00:00",
+        scheduler: Optional[str] = None,
+    ) -> str:
         """
         Write a simple shell script to run FHI-aims in 'workdir'.
         aims_command: e.g. 'mpirun -np 64 /path/to/aims > aims.out'
@@ -46,7 +57,8 @@ class PolaronWorkflow:
         workdir.mkdir(parents=True, exist_ok=True)
         script_path = workdir / "run_aims.sh"
         if scheduler == "slurm":
-            content = textwrap.dedent(f"""\
+            content = textwrap.dedent(
+                f"""\
                 #!/bin/bash
                 #SBATCH --job-name=aims_job
                 #SBATCH --time={walltime}
@@ -54,30 +66,35 @@ class PolaronWorkflow:
                 #SBATCH --output=aims.out\n
                 cd {workdir}
                 {self.aims_executable_command}
-            """)
+            """
+            )
         else:
-            content = textwrap.dedent(f"""\
+            content = textwrap.dedent(
+                f"""\
                  #!/bin/bash
                  cd {workdir}
                  {self.aims_executable_command} > aims.out 2>&1  
-            """)
+            """
+            )
         script_path.write_text(content)
         script_path.chmod(0o755)
         return str(script_path)
 
-    def run_polaron_workflow(self,
-                             generator: Optional[PolaronGenerator],
-                             chosen_site_indices: Union[int, List[int]],
-                             supercell: Tuple[int, int, int] = (2, 2, 2),
-                             add_charge: int = -1,
-                             spin_moments: float = None,
-                             run_dir_root: str = "polaron_runs",
-                             species_dir: str = None,
-                             do_submit: bool = False,
-                             do_bader: bool = True,
-                             potential_axis: int = 2,
-                             dielectric_eps: float = 10.0,
-                             auto_analyze: bool = True) -> Dict[str, Union[str, float]]:
+    def run_polaron_workflow(
+        self,
+        generator: Optional[PolaronGenerator],
+        chosen_site_indices: Union[int, List[int]],
+        supercell: Tuple[int, int, int] = (2, 2, 2),
+        add_charge: int = -1,
+        spin_moments: float = None,
+        run_dir_root: str = "polaron_runs",
+        species_dir: str = None,
+        do_submit: bool = False,
+        do_bader: bool = True,
+        potential_axis: int = 2,
+        dielectric_eps: float = 10.0,
+        auto_analyze: bool = True,
+    ) -> Dict[str, Union[str, float]]:
         """
         High-level orchestrator for polaron calculations + optional analysis.
         auto_analyze: if True, calls PolaronAnalyzer if outputs exist
@@ -95,11 +112,21 @@ class PolaronWorkflow:
         # Write pristine inputs (no added charge)
         # TODO: add functionality where the write_fhi_aims method recongnize if there are polarons or not, here
         # is adding unecessary magnetic moment to the chose_site_indices atoms
-        generator.write_fhi_aims_input_files(site_index=chosen_site_indices, supercell=supercell, add_charge=0.,
-                                             species_dir=species_dir, outdir=str(pristine_dir))
+        generator.write_fhi_aims_input_files(
+            site_index=chosen_site_indices,
+            supercell=supercell,
+            add_charge=0.0,
+            species_dir=species_dir,
+            outdir=str(pristine_dir),
+        )
         # Write charged inputs
-        generator.write_fhi_aims_input_files(site_index=chosen_site_indices, supercell=supercell, add_charge=add_charge,
-                                             species_dir=species_dir, outdir=str(charged_dir))
+        generator.write_fhi_aims_input_files(
+            site_index=chosen_site_indices,
+            supercell=supercell,
+            add_charge=add_charge,
+            species_dir=species_dir,
+            outdir=str(charged_dir),
+        )
 
         # 2) Write job scripts
         script_pr = self.write_simple_job_script(pristine_dir)
@@ -110,7 +137,7 @@ class PolaronWorkflow:
             "charged_dir": str(charged_dir),
             "pristine_script": script_pr,
             "charged_script": script_ch,
-            "instructions": "Run the scripts in the respective directories to perform calculations."
+            "instructions": "Run the scripts in the respective directories to perform calculations.",
         }
 
         # 3) Optionally submit
@@ -127,9 +154,11 @@ class PolaronWorkflow:
         # 4) Optional post-processing
         if auto_analyze:
             try:
-                analyzer = PolaronAnalyzer(fermi_energy=self.fermi_energy,
-                                           epsilon=self.epsilon,
-                                           volume_ang3=self.volume_ang3)
+                analyzer = PolaronAnalyzer(
+                    fermi_energy=self.fermi_energy,
+                    epsilon=self.epsilon,
+                    volume_ang3=self.volume_ang3,
+                )
 
                 # Automatically find outputs
                 # TODO: add here reading of spin cube files
@@ -143,15 +172,27 @@ class PolaronWorkflow:
                     results = analyzer.analyze_polaron_run(
                         pristine_out=str(pristine_out),
                         charged_out=str(charged_out),
-                        atom_coords=np.array([0, 0, 0]),  # placeholder: pass real defect coords
+                        atom_coords=np.array(
+                            [0, 0, 0]
+                        ),  # placeholder: pass real defect coords
                         site_index_supercell=chosen_site_indices[0],
                         total_charge=add_charge,
-                        pot_cube_pristine=str(potential_cube_pristine) if potential_cube_pristine.exists() else None,
-                        pot_cube_charged=str(potential_cube_charged) if potential_cube_charged.exists() else None
+                        pot_cube_pristine=(
+                            str(potential_cube_pristine)
+                            if potential_cube_pristine.exists()
+                            else None
+                        ),
+                        pot_cube_charged=(
+                            str(potential_cube_charged)
+                            if potential_cube_charged.exists()
+                            else None
+                        ),
                     )
                     report["analysis"] = results
                 else:
-                    report["analysis_status"] = "Aims outputs not found; run calculations first."
+                    report["analysis_status"] = (
+                        "Aims outputs not found; run calculations first."
+                    )
             except Exception as e:
                 report["analysis_error"] = str(e)
 

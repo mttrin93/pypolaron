@@ -3,7 +3,7 @@ from pypolaron import PolaronGenerator, PolaronWorkflow
 from pymatgen.ext.matproj import MPRester
 from pathlib import Path
 
-API_key = 'Lau0fNd1JaP2nupVt1U0zriqEuyL4TdT'
+API_key = "Lau0fNd1JaP2nupVt1U0zriqEuyL4TdT"
 
 # Instantiate MPRester (reads API key from environment)
 with MPRester(API_key) as mpr:
@@ -16,12 +16,15 @@ candidates_e = pg_e.propose_sites()
 best_sites = candidates_e[0][0]
 print(best_sites)
 
-workflow = PolaronWorkflow(aims_executable_command ='mpirun -np 24 /path/to/aims')
+workflow = PolaronWorkflow(aims_executable_command="mpirun -np 24 /path/to/aims")
 
-workdir = Path('./')
+workdir = Path("./")
 workflow.write_simple_job_script(workdir)
 
-report = workflow.run_polaron_workflow(generator=pg_e, chosen_site_indices=best_sites,
-                                       species_dir='/home/rinaldi/Documents/programs/FHIaims/species_defaults/defaults_2020/tight')
+report = workflow.run_polaron_workflow(
+    generator=pg_e,
+    chosen_site_indices=best_sites,
+    species_dir="/home/rinaldi/Documents/programs/FHIaims/species_defaults/defaults_2020/tight",
+)
 
 print(report)

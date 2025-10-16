@@ -3,7 +3,7 @@ from pypolaron import PolaronGenerator
 from pymatgen.ext.matproj import MPRester
 from pathlib import Path
 
-API_key = 'Lau0fNd1JaP2nupVt1U0zriqEuyL4TdT'
+API_key = "Lau0fNd1JaP2nupVt1U0zriqEuyL4TdT"
 
 # Instantiate MPRester (reads API key from environment)
 with MPRester(API_key) as mpr:
@@ -11,7 +11,12 @@ with MPRester(API_key) as mpr:
     structure = mpr.get_structure_by_material_id("mp-2657")  # mp-2657 = rutile TiO2
 
 # Electron polaron search (extra electron → likely Ti site)
-pg_e = PolaronGenerator(structure, polaron_type="hole")
+pg_e = PolaronGenerator(structure, polaron_type="electron")
 candidates_e = pg_e.propose_sites(max_sites=10)
 best_sites = candidates_e[0][0]
-print('best sites', candidates_e[0][0])
+print("best sites", candidates_e[0][0])
+
+
+pg_e.write_fhi_aims_input_files(best_sites, set_site_magmoms=False,
+                            species_dir='/home/rinaldi/Documents/programs/FHIaims/species_defaults/defaults_2020/tight')
+

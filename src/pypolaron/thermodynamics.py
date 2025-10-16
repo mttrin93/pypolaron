@@ -3,14 +3,15 @@ from typing import Dict, Any
 
 kB_eV = 8.617333262145e-5  # Boltzmann constant in eV/K
 
+
 class PolaronThermodynamics:
 
     # TODO: this functions can be used to filter out data based on their importance for the temperatures we
     # are interested in, for instance if some polaron becomes satble at 2000 K, but we are not interested at
     # that temperature
-    def compute_boltzmann_probabilities(self,
-                                        multi_polaron_results: Dict[str, Any],
-                                        temperature: float) -> Dict[str, Any]:
+    def compute_boltzmann_probabilities(
+        self, multi_polaron_results: Dict[str, Any], temperature: float
+    ) -> Dict[str, Any]:
         """
         Compute Boltzmann probabilities for multi-polaron configurations from
          polaron formation energies.
@@ -24,8 +25,8 @@ class PolaronThermodynamics:
         """
         all_formation_energies = []
         # Sum formation energies per combination
-        for item in multi_polaron_results['multi_polaron_results']:
-            E_total = sum([r['formation_energy'] for r in item['results']])
+        for item in multi_polaron_results["multi_polaron_results"]:
+            E_total = sum([r["formation_energy"] for r in item["results"]])
             all_formation_energies.append(E_total)
 
         # Convert to Boltzmann weights
@@ -34,15 +35,15 @@ class PolaronThermodynamics:
         probabilities = weights / np.sum(weights)
 
         # Assign probabilities back
-        for idx, item in enumerate(multi_polaron_results['multi_polaron_results']):
-            item['total_formation_energy'] = all_formation_energies[idx]
-            item['probability'] = probabilities[idx]
+        for idx, item in enumerate(multi_polaron_results["multi_polaron_results"]):
+            item["total_formation_energy"] = all_formation_energies[idx]
+            item["probability"] = probabilities[idx]
 
         return multi_polaron_results
 
-    def compute_site_occupations(self,
-                                 multi_polaron_results: Dict[str, Any],
-                                 atomic_count: int) -> np.ndarray:
+    def compute_site_occupations(
+        self, multi_polaron_results: Dict[str, Any], atomic_count: int
+    ) -> np.ndarray:
         """
         Compute average polaron site occupations from multi-polaron Boltzmann probabilities.
 
@@ -55,11 +56,13 @@ class PolaronThermodynamics:
         """
         site_occupations = np.zeros(atomic_count)
 
-        for combo_item in multi_polaron_results['multi_polaron_results']:
-            prob = combo_item['probability']
-            for r in combo_item['results']:
-                atom_idx = r['polaron_atom']
-                site_occupations[atom_idx] += prob  # weighted by configuration probability
+        for combo_item in multi_polaron_results["multi_polaron_results"]:
+            prob = combo_item["probability"]
+            for r in combo_item["results"]:
+                atom_idx = r["polaron_atom"]
+                site_occupations[
+                    atom_idx
+                ] += prob  # weighted by configuration probability
 
         # Ensure occupation does not exceed 1 for single polarons per site
         site_occupations = np.clip(site_occupations, 0, 1)

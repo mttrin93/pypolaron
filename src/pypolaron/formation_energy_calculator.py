@@ -13,8 +13,15 @@ import warnings
 
 HARTREE_TO_EV = 27.211386245988
 
+
 class FormationEnergyCalculator:
-    def __init__(self, total_charge: int, fermi_energy: float, epsilon: Optional[float] = None, volume_ang3: Optional[float] = None):
+    def __init__(
+        self,
+        total_charge: int,
+        fermi_energy: float,
+        epsilon: Optional[float] = None,
+        volume_ang3: Optional[float] = None,
+    ):
         """
         q: integer charge (e.g. -1 for electron polaron)
         mu_e: electron chemical potential referenced to VBM (eV)
@@ -42,13 +49,15 @@ class FormationEnergyCalculator:
         Note: This is a very rough estimate; FNV is preferred.
         """
         if self.epsilon is None or self.epsilon <= 0:
-            raise ValueError("epsilon (dielectric constant) must be provided and >0 for Makov-Payne")
-        L = (self.volume_ang3)**(1.0/3.0)
+            raise ValueError(
+                "epsilon (dielectric constant) must be provided and >0 for Makov-Payne"
+            )
+        L = (self.volume_ang3) ** (1.0 / 3.0)
         # convert to eV: units check - here we assume atomic units converted; use empirical prefactor:
         # Use formula in eV: (q**2 * alpha) / (2 * epsilon * L) * (e^2 / (4*pi*epsilon0)) in eV*Angstrom units.
         # Numeric constant e^2/(4*pi*epsilon0) = 14.3996454784255 eV·Å
         pref = 14.3996454784255
-        E_mp = (self.total_charge ** 2) * alpha * pref / (2.0 * self.epsilon * L)
+        E_mp = (self.total_charge**2) * alpha * pref / (2.0 * self.epsilon * L)
         return float(E_mp)
 
     def potential_alignment_energy(self, delta_phi: float) -> float:
@@ -56,20 +65,21 @@ class FormationEnergyCalculator:
         return -self.total_charge * delta_phi
 
     # TODO: to improve, have a look at https://doped.readthedocs.io/en/latest/doped.corrections.html and
-    #https://doped.readthedocs.io/en/latest/_modules/doped/corrections.html#get_freysoldt_correction
+    # https://doped.readthedocs.io/en/latest/_modules/doped/corrections.html#get_freysoldt_correction
     # TODO: implement other corrections: Kumagai (requires full anisotropic dielectric tensor and arbitraty supercell shapes), Falletta
     # TODO: the corrections should be fully compatible with multi-polaronic configurations
-    def get_freysoldt_correction_from_aims_cubes(self,
-                                                 pristine_cube_path: str,
-                                                 charged_cube_path: str,
-                                                 structure: Union[Atoms, Structure],
-                                                 site_supercell_index: int,
-                                                 # axis: Optional[int] = None,
-                                                 # plot: bool = False,
-                                                 # filename_plot: Optional[str] = None,
-                                                 # verbose: bool = True,
-                                                 **kwargs
-                                                 ) -> Dict[str, Union[float, dict]]:
+    def get_freysoldt_correction_from_aims_cubes(
+        self,
+        pristine_cube_path: str,
+        charged_cube_path: str,
+        structure: Union[Atoms, Structure],
+        site_supercell_index: int,
+        # axis: Optional[int] = None,
+        # plot: bool = False,
+        # filename_plot: Optional[str] = None,
+        # verbose: bool = True,
+        **kwargs,
+    ) -> Dict[str, Union[float, dict]]:
         """
         Wrapper to compute Freysoldt correction (FNV) using pymatgen, from Gaussian cube files.
 
@@ -108,18 +118,19 @@ class FormationEnergyCalculator:
         with open(file_charged_cube, "r") as f:
             charged_cube = read_cube(f)
 
-        assert pristine_cube["data"].shape == charged_cube["data"].shape, \
-            "Pristine and charged cube grids must match"
+        assert (
+            pristine_cube["data"].shape == charged_cube["data"].shape
+        ), "Pristine and charged cube grids must match"
 
         # Build "Locpot-like" objects (pymatgen expects potential grids)
         # TODO: check if the conversion here from Hartree to eV makes sense
         locpot_bulk = Locpot(
             poscar=Poscar(structure),
-            data={"total": pristine_cube['data'] * HARTREE_TO_EV},
+            data={"total": pristine_cube["data"] * HARTREE_TO_EV},
         )
         locpot_defect = Locpot(
             poscar=Poscar(structure),
-            data={"total": charged_cube['data'] * HARTREE_TO_EV},
+            data={"total": charged_cube["data"] * HARTREE_TO_EV},
         )
 
         # --- Call pymatgen FNV correction ---
@@ -130,7 +141,7 @@ class FormationEnergyCalculator:
             bulk_locpot=locpot_bulk,
             lattice=structure.lattice,
             defect_frac_coords=structure[site_supercell_index].frac_coords,
-            **kwargs
+            **kwargs,
         )
 
         # # --- Print summary ---

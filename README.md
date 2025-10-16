@@ -1,18 +1,22 @@
 # PYPOLARON
- This repository contains scripts for automated polaron calculations with FHI-AIMS.
+
+This repository contains scripts for automated polaron calculations with FHI-AIMS.
  
 ## Installation
- Run:
+
+Run:
 
 `pip install -e .`
 
 to install the package via `pip` in editable mode. 
-Run:
+
+Run the command:
 
 `pip install -e .[dev]`
 
 to install the package and tests used for development.
 
-## Training
+[//]: # (## Training)
 
-## Testing
+[//]: # ()
+[//]: # (## Testing)

@@ -16,6 +16,7 @@ from pypolaron.formation_energy_calculator import FormationEnergyCalculator
 #  1) check variations in Bader charges
 #  2) use formation energies to rank stable polaron sites
 
+
 class PolaronAnalyzer:
     """
     High-level analyzer for FHI-aims polaron calculations.
@@ -24,11 +25,14 @@ class PolaronAnalyzer:
     system volume, etc., and provides methods to parse outputs, analyze
     charge localization, and compute formation energies with corrections.
     """
-    def __init__(self,
-                 epsilon: Optional[float] = None,
-                 fermi_energy: float = 0.0,
-                 volume_ang3: Optional[float] = None,
-                 exclude_radius: float = 2.0):
+
+    def __init__(
+        self,
+        epsilon: Optional[float] = None,
+        fermi_energy: float = 0.0,
+        volume_ang3: Optional[float] = None,
+        exclude_radius: float = 2.0,
+    ):
         self.epsilon = epsilon
         self.fermi_energy = fermi_energy
         self.volume_ang3 = volume_ang3
@@ -46,7 +50,9 @@ class PolaronAnalyzer:
             if hasattr(atoms, "get_potential_energy"):
                 return atoms.get_potential_energy()
         except Exception as ase_err:
-            print(f"[ASE parser warning] Failed to read {aims_out_path} with ASE: {ase_err}")
+            print(
+                f"[ASE parser warning] Failed to read {aims_out_path} with ASE: {ase_err}"
+            )
 
         text = p.read_text()
         # try some common patterns; energies in aims often in eV with 'Total energy of the DFT part' or 'Total energy'
@@ -56,14 +62,16 @@ class PolaronAnalyzer:
             # take the last matched line
             return float(matches[-1])
         else:
-            raise RuntimeError(f"Could not find electronic free energy in {aims_out_path}")
+            raise RuntimeError(
+                f"Could not find electronic free energy in {aims_out_path}"
+            )
 
     def parse_aims_mulliken_population(self, aims_out_path: str) -> Dict[int, float]:
         """
         Parse Mulliken population table from FHI-aims output.
         Returns dict mapping atom_index (0-based) -> population (float, number of electrons assigned to atom).
         """
-        #TODO: write the same function but in the case of hirshfeld population
+        # TODO: write the same function but in the case of hirshfeld population
         p = Path(aims_out_path)
         text = p.read_text()
         lines = text.splitlines()
@@ -84,7 +92,7 @@ class PolaronAnalyzer:
             return {}  # no Mulliken block found
 
         data = {}
-        for line in lines[start_idx + 2:]:
+        for line in lines[start_idx + 2 :]:
             if line.strip() == "" or "----" in line:
                 break
             # extract atom index and electrons
@@ -100,7 +108,9 @@ class PolaronAnalyzer:
 
         return data
 
-    def read_aims_cube(self, file_path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, np.ndarray]:
+    def read_aims_cube(
+        self, file_path: str
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, np.ndarray]:
         """
         Read a total_density.cube file using ASE’s read_cube.
 
@@ -120,14 +130,14 @@ class PolaronAnalyzer:
             cube = read_cube(f)
 
         # Extract grid data
-        data = cube['data'].copy()  # shape (nx, ny, nz)
-        origin = cube['origin'].copy()  # 3-array, specifying the cube_data origin
-        axes = np.array(cube['spacing'])  # 3x3 array, representing voxel size
+        data = cube["data"].copy()  # shape (nx, ny, nz)
+        origin = cube["origin"].copy()  # 3-array, specifying the cube_data origin
+        axes = np.array(cube["spacing"])  # 3x3 array, representing voxel size
 
         # Extract atoms
-        number_of_atoms = len(cube['atoms'])
+        number_of_atoms = len(cube["atoms"])
         atom_list = np.zeros((number_of_atoms, 4), dtype=float)
-        for i, atom in enumerate(cube['atoms']):
+        for i, atom in enumerate(cube["atoms"]):
             atom_list[i, 0] = atom.number  # atomic number
             atom_list[i, 1:4] = atom.position  # x, y, z in Angstrom
 
@@ -135,11 +145,13 @@ class PolaronAnalyzer:
 
     # TODO: run Bader on spin densities
     # TODO: add a mapping, sometimes the order of the atoms in ACF.dat is not the same as in the pymatgen structure!!!
-    def run_bader(self,
-                  charge_density_path: str,
-                  output_dir: Optional[str] = None,
-                  reference: Optional[str] = None,
-                  bader_executable_path: Optional[str] = None) -> Dict:
+    def run_bader(
+        self,
+        charge_density_path: str,
+        output_dir: Optional[str] = None,
+        reference: Optional[str] = None,
+        bader_executable_path: Optional[str] = None,
+    ) -> Dict:
         """
         Run external 'bader' program (Henkelman) on a charge-density file.
         Accepts CHGCAR or .cube (Gaussian cube) files. If 'reference' provided, passes -ref <reference>.
@@ -148,21 +160,29 @@ class PolaronAnalyzer:
         """
         p = Path(charge_density_path)
         if not p.exists():
-            raise FileNotFoundError(f"Charge density file not found: {charge_density_path}")
+            raise FileNotFoundError(
+                f"Charge density file not found: {charge_density_path}"
+            )
 
         outdir = Path(output_dir) if output_dir else p.parent
         outdir.mkdir(parents=True, exist_ok=True)
 
         # --- add bader path to PATH if provided ---
         if bader_executable_path:
-            os.environ["PATH"] = str(Path(bader_executable_path).parent) + os.pathsep + os.environ["PATH"]
+            os.environ["PATH"] = (
+                str(Path(bader_executable_path).parent)
+                + os.pathsep
+                + os.environ["PATH"]
+            )
 
         cmd = [bader_executable_path or "bader", str(p)]
         if reference:
             cmd += ["-ref", str(reference)]
         # run in output dir (bader writes ACF.dat / other files here)
         try:
-            proc = subprocess.run(cmd, cwd=str(outdir), capture_output=True, text=True, check=True)
+            proc = subprocess.run(
+                cmd, cwd=str(outdir), capture_output=True, text=True, check=True
+            )
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"bader failed: {e.stderr}\nCommand: {' '.join(cmd)}")
 
@@ -175,7 +195,7 @@ class PolaronAnalyzer:
             with open(acf_path, "r") as fh:
                 for line in fh:
                     # Skip empty lines or separators
-                    if not line or line.startswith('#') or line.startswith('-'):
+                    if not line or line.startswith("#") or line.startswith("-"):
                         continue
                     # Skip footer lines (non-numeric first column)
                     parts = line.split()
@@ -194,31 +214,31 @@ class PolaronAnalyzer:
         return {"atomic_charges": atomic_bader_charges, "acf_path": str(acf_path)}
 
     def charge_difference_from_bader_analysis(
-            self,
-            pristine_cube_path: str,
-            charged_cube_path: str,
-            site_supercell_index: int,
-            bader_executable_path: Optional[str] = None,
-            tmp_dir: str = "./"
+        self,
+        pristine_cube_path: str,
+        charged_cube_path: str,
+        site_supercell_index: int,
+        bader_executable_path: Optional[str] = None,
+        tmp_dir: str = "./",
     ) -> float:
         """
         Compute charge difference (charged - neutral) for a given atom index using Bader analysis.
         Runs the external 'bader' program on the provided cube files.
         Returns delta_charge: positive means more electrons in the charged calculation near the atom.
         """
-        #TODO: here we calculate the differences in bader charges, try to calculate the difference in magmoms (charged - neutral)
+        # TODO: here we calculate the differences in bader charges, try to calculate the difference in magmoms (charged - neutral)
         # check if the code works when site_supercell_index is a list of ints
 
         # --- run bader for both charge densities ---
         bader_neutral = self.run_bader(
             charge_density_path=pristine_cube_path,
             output_dir=os.path.join(tmp_dir, "neutral"),
-            bader_executable_path=bader_executable_path
+            bader_executable_path=bader_executable_path,
         )
         bader_charged = self.run_bader(
             charge_density_path=charged_cube_path,
             output_dir=os.path.join(tmp_dir, "charged"),
-            bader_executable_path=bader_executable_path
+            bader_executable_path=bader_executable_path,
         )
 
         # --- extract atomic charges ---
@@ -226,7 +246,9 @@ class PolaronAnalyzer:
         charges_charged = bader_charged.get("atomic_charges", [])
 
         if not charges_neutral or not charges_charged:
-            raise ValueError("Bader analysis failed to produce atomic charges for one or both cubes.")
+            raise ValueError(
+                "Bader analysis failed to produce atomic charges for one or both cubes."
+            )
 
         if len(charges_neutral) != len(charges_charged):
             raise ValueError(
@@ -234,7 +256,10 @@ class PolaronAnalyzer:
             )
 
         # --- compute charge difference for the selected atom ---
-        delta_q = charges_charged[site_supercell_index] - charges_neutral[site_supercell_index]
+        delta_q = (
+            charges_charged[site_supercell_index]
+            - charges_neutral[site_supercell_index]
+        )
 
         return delta_q
 
@@ -253,27 +278,38 @@ class PolaronAnalyzer:
         return float(ipr)
 
     # TODO: CHECK THIS FUNCTION
-    def potential_alignment(self, neutral_pot_cube: str,
-                            charged_pot_cube: str,
-                            atom_coords: np.ndarray,
-                            exclude_radius: float = 2.0) -> float:
+    def potential_alignment(
+        self,
+        neutral_pot_cube: str,
+        charged_pot_cube: str,
+        atom_coords: np.ndarray,
+        exclude_radius: float = 2.0,
+    ) -> float:
         """
         Compute potential alignment delta by averaging electrostatic potential in regions far from atoms in both cubes
         and returning (phi_charged - phi_neutral). Potentials should be in eV in the cube.
         This is simplistic: we exclude spheres of radius 'exclude_radius' around all atoms, then average remaining grid points.
         """
-        grid_n, origin_n, axes_n, nat_n, atoms_n = PolaronAnalyzer.read_aims_cube(neutral_pot_cube)
-        grid_c, origin_c, axes_c, nat_c, atoms_c = PolaronAnalyzer.read_aims_cube(charged_pot_cube)
+        grid_n, origin_n, axes_n, nat_n, atoms_n = PolaronAnalyzer.read_aims_cube(
+            neutral_pot_cube
+        )
+        grid_c, origin_c, axes_c, nat_c, atoms_c = PolaronAnalyzer.read_aims_cube(
+            charged_pot_cube
+        )
         # compute mask of 'far' grid points (not within exclude_radius of any atom)
         nx, ny, nz = grid_n.shape
         ix, iy, iz = np.arange(nx), np.arange(ny), np.arange(nz)
         I, J, K = np.meshgrid(ix, iy, iz, indexing="ij")
-        coords = ( origin_n.reshape((1, 1, 1, 3)) + I[..., None]*axes_n[0] +
-                   J[..., None]*axes_n[1] + K[..., None]*axes_n[2] )
+        coords = (
+            origin_n.reshape((1, 1, 1, 3))
+            + I[..., None] * axes_n[0]
+            + J[..., None] * axes_n[1]
+            + K[..., None] * axes_n[2]
+        )
         mask_far = np.ones(coords.shape[:-1], dtype=bool)
         for a in atom_coords:
             d = np.linalg.norm(coords - np.array(a).reshape((1, 1, 1, 3)), axis=-1)
-            mask_far &= (d > exclude_radius)
+            mask_far &= d > exclude_radius
         if mask_far.sum() == 0:
             # fallback: average whole cell
             phi_n = np.mean(grid_n)
@@ -284,17 +320,20 @@ class PolaronAnalyzer:
         # alignment to apply to energy: -q * delta_phi (but sign conventions vary). We'll return delta_phi = phi_ch - phi_neu
         return float(phi_c - phi_n)
 
-    def analyze_polaron_run(self,
-                            pristine_out: str, charged_out: str,
-                            atom_coords: np.ndarray,
-                            site_index_supercell: int,
-                            total_charge: int,
-                            pristine_cube_path: Optional[str] = None,
-                            charged_cube_path: Optional[str] = None,
-                            spin_cube: Optional[str] = None,
-                            pot_cube_pristine: Optional[str] = None,
-                            pot_cube_charged: Optional[str] = None,
-                            bader_executable_path: Optional[str] = None) -> Dict[str, float]:
+    def analyze_polaron_run(
+        self,
+        pristine_out: str,
+        charged_out: str,
+        atom_coords: np.ndarray,
+        site_index_supercell: int,
+        total_charge: int,
+        pristine_cube_path: Optional[str] = None,
+        charged_cube_path: Optional[str] = None,
+        spin_cube: Optional[str] = None,
+        pot_cube_pristine: Optional[str] = None,
+        pot_cube_charged: Optional[str] = None,
+        bader_executable_path: Optional[str] = None,
+    ) -> Dict[str, float]:
         """
         High-level analysis:
         - Parse total energies from aims outputs
@@ -325,7 +364,8 @@ class PolaronAnalyzer:
 
         # --- Compute raw formation energy ---
         results["raw_formation_energy_eV"] = formation_energy_calculator.raw(
-            E_polaron=energy_charged, E_pristine=energy_pristine,
+            E_polaron=energy_charged,
+            E_pristine=energy_pristine,
         )
 
         # --- Mulliken populations
@@ -339,15 +379,19 @@ class PolaronAnalyzer:
             results["mulliken_charged"] = population_charged
 
             # Compute delta population (charged - pristine)
-            results["delta_mulliken_population"] = population_charged - population_pristine
+            results["delta_mulliken_population"] = (
+                population_charged - population_pristine
+            )
 
         # approximate sphere integration (Bader-like)
         if pristine_cube_path and charged_cube_path:
             try:
-                delta_q = self.charge_difference_from_bader_analysis(pristine_cube_path=pristine_cube_path,
-                                                                     charged_cube_path=charged_cube_path,
-                                                                     bader_executable_path=bader_executable_path,
-                                                                     site_supercell_index=site_index_supercell)
+                delta_q = self.charge_difference_from_bader_analysis(
+                    pristine_cube_path=pristine_cube_path,
+                    charged_cube_path=charged_cube_path,
+                    bader_executable_path=bader_executable_path,
+                    site_supercell_index=site_index_supercell,
+                )
                 results["delta_charge_sphere_integral"] = delta_q
             except Exception as e:
                 results["delta_charge_sphere_integral_error"] = str(e)
@@ -367,10 +411,12 @@ class PolaronAnalyzer:
         # potential alignment
         if pot_cube_pristine and pot_cube_charged:
             try:
-                delta_phi = self.potential_alignment(pot_cube_pristine, pot_cube_charged, atom_coords)
+                delta_phi = self.potential_alignment(
+                    pot_cube_pristine, pot_cube_charged, atom_coords
+                )
                 corrections["potential_alignment_delta_phi_eV"] = delta_phi
                 # energy correction for formation energy is - q * delta_phi (if mu_e referenced to same potential)
-                corrections["potential_alignment_energy_eV"] = - total_charge * delta_phi
+                corrections["potential_alignment_energy_eV"] = -total_charge * delta_phi
                 total_corr += corrections["potential_alignment_energy_eV"]
             except Exception as e:
                 corrections["potential_alignment_error"] = str(e)
@@ -386,6 +432,8 @@ class PolaronAnalyzer:
 
         results["corrections"] = corrections
         results["total_corrections_eV"] = total_corr
-        results["formation_energy_corrected_eV"] = results["raw_formation_energy_eV"] + total_corr
+        results["formation_energy_corrected_eV"] = (
+            results["raw_formation_energy_eV"] + total_corr
+        )
 
         return results

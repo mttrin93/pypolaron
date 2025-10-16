@@ -37,16 +37,27 @@ class PolaronGenerator:
     def assign_oxidation_states(self):
         """Assign oxidation states using Bond Valence Analyzer."""
         bond_valence_analyzer = BVAnalyzer()
-        self.structure = bond_valence_analyzer.get_oxi_state_decorated_structure(self.structure)
-        self.oxidation_assigned = True
+        try:
+            self.structure = bond_valence_analyzer.get_oxi_state_decorated_structure(self.structure)
+            self.oxidation_assigned = True
+        except Exception as e:
+            print(f'Warning: BVAnalyzer failed to assign oxidation states. Please ensure structure is valid. Error {e}')
+            self.oxidation_assigned = False
 
     def _get_symmetrically_distinct_sites(self) -> List[int]:
         """
         Filters the structure sites to return a list of indices
         for only the symmetrically distinct sites.
         """
+        if not self.structure.is_ordered:
+            return list(range(len(self.structure)))
+
         sga = SpacegroupAnalyzer(self.structure)
-        equivalent_indices = sga.get_symmetry_dataset().equivalent_atoms
+
+        try:
+            equivalent_indices = sga.get_symmetry_dataset().equivalent_atoms
+        except AttributeError:
+            equivalent_indices = sga.get_symmetry_dataset()['equivalent_atoms']
 
         seen_representatives_indices = set()
         distinct_site_indices = []
@@ -66,14 +77,16 @@ class PolaronGenerator:
         if not self.oxidation_assigned:
             self.assign_oxidation_states()
 
-        distinct_indices = self._get_symmetrically_distinct_sites()
+        if not self.oxidation_assigned:
+            return []
 
+        distinct_indices = self._get_symmetrically_distinct_sites()
         candidates = []
 
         for index in distinct_indices:
             site = self.structure.sites[index]
             element = site.specie.symbol
-            oxidation_state = site.specie.oxi_state
+            oxidation_state = site.specie.oxi_state if hasattr(site.specie, 'oxi_state') else 0.
             coordination_number = self.crystal_near_neighbors.get_cn(self.structure, index)
 
             score = self._score_site(element, oxidation_state, coordination_number)

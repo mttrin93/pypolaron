@@ -6,7 +6,12 @@
 
 `pip install -e .`
 
-to install the package via `pip`.
+to install the package via `pip` in editable mode. 
+Run:
+
+`pip install -e .[dev]`
+
+to install the package and tests used for development.
 
 ## Training
 

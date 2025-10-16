@@ -22,7 +22,7 @@ dependencies = [
     "matscipy",
     "pymatgen",
     "pymatgen-analysis-defects",
-    "pydefect"
+    "pydefect",
 ]
 dynamic = ["version"]
 
@@ -35,3 +35,21 @@ version = {attr = "pypolaron.__version__"}
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["pypolaron", "pypolaron.*"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "black",
+  "flake8"
+]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-q --color=yes --disable-warnings"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+# register any custom markers to avoid pytest warnings:
+markers = [
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+]

@@ -205,7 +205,7 @@ class PolaronGenerator:
                 continue
 
             # Simple vacancy score: prioritize undercoordinated, less electronegative anions
-            score = self._score_site(element, site.specie.oxi_state, coordination_number)
+            score = 0.5 * (max(0., 6. - coordination_number) + (4. - Element(element).X))
 
             # We only care about the vacancy location index for now.
             if score > 0:

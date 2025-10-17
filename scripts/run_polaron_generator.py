@@ -26,7 +26,6 @@ DEFAULT_SEED = 42
 
 def display_candidates(candidates: List[Any], title: str):
     """Prints the ranked list of candidates in a readable format."""
-    print(candidates)
     if not candidates:
         log.info("No Plausible Candidates Found. Exiting.")
         return
@@ -36,13 +35,13 @@ def display_candidates(candidates: List[Any], title: str):
 
             log.info(f"Top {len(candidates)} {title} candidates:")
             index, element, score = candidate
-            log.info(f"Type: {title} | Atom index {index} | Score: {score:.3f}")
+            log.info(f"   Type: {title} | Atom index {index} | Score: {score:.3f}")
 
         elif title in ["electron", "hole"]:
 
             log.info(f"Top {len(candidates)} {title} polaron candidates:")
             index, element, oxidation_state, coordination_number, score = candidate
-            log.info(f"Type: {title} polaron | Atom index {index} | Element : {element}"
+            log.info(f"   Type: {title} polaron | Atom index {index} | Element : {element}"
                      f"  | Oxidation State: {oxidation_state} | "
                      f"Coordination Number: {coordination_number} | Score: {score:.3f}")
 
@@ -140,14 +139,16 @@ def main(args):
                 # Prioritize fetching the conventional cell for polaron supercell generation
                 if mp_id_or_comp.startswith("mp-") or mp_id_or_comp.startswith("mvc-"):
                     structure = mpr.get_structure_by_material_id(mp_id_or_comp, conventional_unit_cell=True)
-                    log.info(f"Conventional cell for structure with ID/composition {mp_id_or_comp} loaded from MP")
+                    log.info(f"Conventional cell for structure with ID/composition {mp_id_or_comp} loaded from "
+                             f" Materials Project database ")
                 else:
                     # Fetching the most stable entry for a given composition
                     entries = mpr.get_entries(mp_id_or_comp)
                     if entries:
                         best_entry = min(entries, key=lambda e: e.data.get('formation_energy_per_atom', float('inf')))
                         structure = best_entry.structure
-                        log.info(f"Most stable structure with ID/composition {mp_id_or_comp} loaded from MP")
+                        log.info(f"Most stable structure with ID/composition {mp_id_or_comp} loaded from Materials"
+                                 f" Project database ")
                     else:
                         raise ValueError("No stable structure found for this query.")
 
@@ -178,7 +179,11 @@ def main(args):
         log.info(f"{number_of_oxygen_vacancies} oxygen vacancy(ies) will be considered, that"
                  f" correspond(s) to {number_of_oxygen_vacancies*2} electron polarons")
 
-    log.info(f"The calculations will run with {number_of_polarons} additional {polaron_type} polaron(s)")
+    if polaron_type == 'electron':
+        log.info(f"The calculations will run with {number_of_polarons} additional {polaron_type} polaron(s). "
+                 f"In total {number_of_polarons + number_of_oxygen_vacancies*2} {polaron_type} polarons ")
+    elif polaron_type == 'hole':
+        log.info(f"The calculations will run with {number_of_polarons} additional {polaron_type} polaron(s).")
 
     # TODO: if polaron_type is hole we cannot use occupation matrix control method
 
@@ -191,7 +196,7 @@ def main(args):
 
     if number_of_oxygen_vacancies > 0:
         if polaron_type != "electron":
-            print("Calculations with both hole polaron and oxygen vacancies are not possible")
+            log.info("Calculations with both hole polaron and oxygen vacancies are not possible")
             return
         oxygen_vacancies_candidates = polaron_generator.propose_vacancy_sites(max_sites=number_of_oxygen_vacancies)
         display_candidates(oxygen_vacancies_candidates, 'oxygen vacancy')

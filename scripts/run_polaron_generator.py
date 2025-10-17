@@ -37,7 +37,7 @@ def display_candidates(candidates: List[Any], title: str):
             index, element, score = candidate
             log.info(f"   Type: {title} | Atom index {index} | Score: {score:.3f}")
 
-        elif title in ["electron", "hole"]:
+        elif title in ["electron", "hole", "from oxygen vacancy"]:
 
             log.info(f"Top {len(candidates)} {title} polaron candidates:")
             index, element, oxidation_state, coordination_number, score = candidate
@@ -47,10 +47,12 @@ def display_candidates(candidates: List[Any], title: str):
 
 
 def main(args):
-    parser = argparse.ArgumentParser(prog="pypolaron", description="Toolkit for automated DFT polaron calculations "
+    parser = argparse.ArgumentParser(prog="pypolaron",
+                                     description="Toolkit for automated DFT polaron calculations "
                                                                    "with FHI-AIMS and VASP.\n" +
                                                                    "version: {}".format(__version__),
-                                     formatter_class=argparse.RawTextHelpFormatter)
+                                     formatter_class=argparse.RawTextHelpFormatter
+                                     )
     source_group = parser.add_mutually_exclusive_group(required=True)
     source_group.add_argument(
         "-f", "--file",
@@ -81,7 +83,8 @@ def main(args):
         "-polaron-number", "--polaron-number",
         type=int,
         default=1,
-        help="Total number of additional polarons. If set to zero, specify a oxygen vacancy number larger than zero"
+        help="Total number of additional polarons (default 1). If set to zero, "
+             " specify a oxygen vacancy number larger than zero"
     )
 
     parser.add_argument(
@@ -90,6 +93,49 @@ def main(args):
         default=0,
         help="Number of added oxygen vacancies. "
              "The creation of oxygen vacancies leads to the formation of two electron polarons"
+    )
+
+    parser.add_argument(
+        "-sc",
+        "--supercell",
+        type=int,
+        nargs=3,
+        default=(2, 2, 2),
+        help="Supercell dimensions (a, b, c) as three space-separated integers (e.g., 2 2 2)",
+    )
+
+    parser.add_argument(
+        "-dft-tool",
+        "--dft-tool",
+        type=str,
+        choices=['vasp', 'aims'],
+        required=True,
+        help="DFT code input to generate: 'vasp' or 'aims'",
+    )
+
+    parser.add_argument(
+        "-func",
+        "--functional",
+        type=str,
+        default='hse06',
+        help="DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06').",
+    )
+
+    parser.add_argument(
+        "-calc-type",
+        "--calc-type",
+        type=str,
+        choices=['scf', 'relax-atoms', 'relax-all'],
+        default='relax-atoms',
+        help="Calculation type: 'scf' (static), 'relax-atoms' (ions only), or 'relax-all' (ions and cell).",
+    )
+
+    parser.add_argument(
+        "-spin",
+        "--spin-moment",
+        type=float,
+        default=1.0,
+        help="Initial magnetic moment to set on the polaron site(s) for spin seeding.",
     )
 
     args_parse = parser.parse_args(args)
@@ -189,20 +235,25 @@ def main(args):
 
     # 3. Initialize Generator and Run Analysis
     polaron_generator = PolaronGenerator(structure, polaron_type=polaron_type)
+    polaron_generator.assign_oxidation_states()  # Ensure oxidation states are set once
 
     if polaron_type in ["electron", "hole"] and number_of_polarons > 0:
         polaron_candidates = polaron_generator.propose_sites(max_sites=number_of_polarons)
         display_candidates(polaron_candidates, polaron_type)
 
     if number_of_oxygen_vacancies > 0:
-        if polaron_type != "electron":
-            log.info("Calculations with both hole polaron and oxygen vacancies are not possible")
-            return
         oxygen_vacancies_candidates = polaron_generator.propose_vacancy_sites(max_sites=number_of_oxygen_vacancies)
         display_candidates(oxygen_vacancies_candidates, 'oxygen vacancy')
 
-    polaron_generator.assign_oxidation_states()  # Ensure oxidation states are set once
+        if oxygen_vacancies_candidates:
+            electron_polaron_candidates_from_oxygen_vacancies = polaron_generator.propose_sites(
+                max_sites=number_of_oxygen_vacancies*2)
+            display_candidates(electron_polaron_candidates_from_oxygen_vacancies,
+                               'from oxygen vacancy')
+
     log.info("Analysis Complete. Ready for DFT Input Generation")
+
+    # TODO: start by specifing workdir where the DFT calculations will be performed
 
 
 if __name__ == "__main__":

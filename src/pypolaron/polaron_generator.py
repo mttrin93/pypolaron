@@ -76,7 +76,6 @@ class PolaronGenerator:
 
         return distinct_site_indices
 
-    # TODO: add possibility to create electron polarons by introducing an oxygen vacancy
     def propose_sites(
         self, max_sites: int = 5
     ) -> List[Tuple[int, str, Optional[float], float, float]]:
@@ -181,6 +180,44 @@ class PolaronGenerator:
             mapped_indices.append(index_min_distance_center)
 
         return mapped_indices
+
+    def propose_vacancy_sites(self, max_sites: int = 5) -> List[Tuple[int, str, float]]:
+        """
+        Propose candidate sites for Oxygen Vacancy (Vo) creation, which leads
+        to two electron polarons.
+        Returns list of tuples: (site_index, element, coordination_number)
+        """
+        if not self.oxidation_assigned:
+            self.assign_oxidation_states()
+
+        distinct_indices = self._get_symmetrically_distinct_sites()
+        candidates = []
+
+        for index in distinct_indices:
+            site = self.structure.sites[index]
+            element = site.specie.symbol
+            coordination_number = self.crystal_near_neighbors.get_cn(self.structure, index)
+
+            # --- Primary Filter: Only Anions (O is the most common) ---
+            # if not site.specie.is_anion:
+            #     continue
+            if element != 'O':
+                continue
+
+            # Simple vacancy score: prioritize undercoordinated, less electronegative anions
+            score = self._score_site(element, site.specie.oxi_state, coordination_number)
+
+            # We only care about the vacancy location index for now.
+            if score > 0:
+                candidates.append(
+                    (index, element, score)
+                )
+
+        # sort by score (higher = more likely vacancy site)
+        candidates.sort(key=lambda x: -x[2])
+
+        # Output format: (site_index, element, score)
+        return candidates[:max_sites]
 
     def _get_total_charge(
         self,

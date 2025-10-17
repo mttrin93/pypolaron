@@ -21,76 +21,30 @@ LOG_FMT = '%(asctime)s %(levelname).1s - %(message)s'.format(hostname)
 logging.basicConfig(level=logging.INFO, format=LOG_FMT, datefmt="%Y/%m/%d %H:%M:%S")
 log = logging.getLogger()
 
-# --- Configuration ---
-# NOTE: Replace with your actual Materials Project API Key or set as environment variable
-# MP_API_KEY = os.environ.get("MP_API_KEY", "YOUR_PLACEHOLDER_KEY")
-
 DEFAULT_SEED = 42
 
 
-# def display_candidates(candidates: List[Any], title: str):
-#     """Prints the ranked list of candidates in a readable format."""
-#     if not candidates:
-#         print("\n--- No Plausible Candidates Found ---")
-#         return
-#
-#     print(f"\n--- Top {len(candidates)} {title} Candidates ---")
-#     for i, candidate in enumerate(candidates):
-#         if title == "Vacancy-Induced Di-Polaron":
-#             # Format: (vacancy_index, (polaron_index_A, polaron_index_B), final_di_polaron_score)
-#             v_idx, p_pair, score = candidate
-#             v_site = "V_O"  # Placeholder for vacancy type
-#             print(
-#                 f"Rank {i + 1}: Vacancy Site {v_idx} ({v_site}) + Di-Polaron on Cations {p_pair} | Score: {score:.3f}")
-#         else:  # Single or Dimer Polaron
-#             # Format: ((site_indices), final_score, polaron_type_str)
-#             indices, score, site_type = candidate
-#
-#             site_list = ", ".join([f"Idx {idx} ({pg.structure.sites[idx].specie.symbol})" for idx in indices])
-#             print(f"Rank {i + 1}: Type: {site_type.capitalize()} | Sites: {site_list} | Score: {score:.3f}")
+def display_candidates(candidates: List[Any], title: str):
+    """Prints the ranked list of candidates in a readable format."""
+    print(candidates)
+    if not candidates:
+        log.info("No Plausible Candidates Found. Exiting.")
+        return
 
+    for i, candidate in enumerate(candidates):
+        if title == "oxygen vacancy":
 
-# def run_analysis(pg: PolaronGenerator):
-#     """Guides the user through the polaron site proposal analysis."""
-#     print(f"\n--- Running Analysis for {pg.polaron_type.upper()} Polaron ---")
-#
-#     analysis_type = input(
-#         "Choose Analysis Type: (S)ingle/Dimer Polaron or (V)acancy-Induced Di-Polaron? [S/V]: ").strip().upper()
-#
-#     max_sites = 5
-#     try:
-#         max_sites = int(input(f"How many top candidate sites should be proposed? (Default: 5): ") or 5)
-#     except ValueError:
-#         pass
-#
-#     if analysis_type == 'S':
-#         # Single and Dimer Analysis
-#         candidates = pg.propose_sites(max_sites=max_sites)
-#         display_candidates(candidates, "Single/Dimer Polaron")
-#
-#     elif analysis_type == 'V':
-#         # Vacancy-Induced Di-Polaron Analysis (Only valid for electron polaron)
-#         if pg.polaron_type != "electron":
-#             print("\nERROR: Vacancy-induced di-polaron analysis is only chemically relevant for electron polarons.")
-#             return
-#
-#         print("\n--- Step 1: Proposing Oxygen Vacancy Candidates ---")
-#         vacancy_candidates = pg.propose_vacancy_sites(max_sites=max_sites)
-#
-#         if not vacancy_candidates:
-#             print("No suitable vacancy sites found.")
-#             return
-#
-#         # Run Di-Polaron Analysis on the top vacancy candidates
-#         print("\n--- Step 2: Proposing Di-Polarons on Neighboring Cations ---")
-#         di_polaron_candidates = pg.propose_di_polaron_sites(
-#             vacancy_site_candidates=vacancy_candidates,
-#             max_di_polaron_candidates=max_sites
-#         )
-#         display_candidates(di_polaron_candidates, "Vacancy-Induced Di-Polaron")
-#
-#     else:
-#         print("Invalid analysis choice.")
+            log.info(f"Top {len(candidates)} {title} candidates:")
+            index, element, score = candidate
+            log.info(f"Type: {title} | Atom index {index} | Score: {score:.3f}")
+
+        elif title in ["electron", "hole"]:
+
+            log.info(f"Top {len(candidates)} {title} polaron candidates:")
+            index, element, oxidation_state, coordination_number, score = candidate
+            log.info(f"Type: {title} polaron | Atom index {index} | Element : {element}"
+                     f"  | Oxidation State: {oxidation_state} | "
+                     f"Coordination Number: {coordination_number} | Score: {score:.3f}")
 
 
 def main(args):
@@ -128,7 +82,7 @@ def main(args):
         "-polaron-number", "--polaron-number",
         type=int,
         default=1,
-        help="Total number of polarons"
+        help="Total number of additional polarons. If set to zero, specify a oxygen vacancy number larger than zero"
     )
 
     parser.add_argument(
@@ -136,7 +90,7 @@ def main(args):
         type=int,
         default=0,
         help="Number of added oxygen vacancies. "
-             " The creation of oxygen vacancies leads to the formation of two electron polarons"
+             "The creation of oxygen vacancies leads to the formation of two electron polarons"
     )
 
     args_parse = parser.parse_args(args)
@@ -209,23 +163,41 @@ def main(args):
 
     # 2. Get Polaron Type (Interactive)
     polaron_type = args_parse.polaron_type.lower()
-    if polaron_type not in ['electron', 'hole']:
+    if polaron_type not in ["electron", "hole"]:
         log.warning(f"Invalid polaron type choice: {polaron_type}. Exiting.")
         return
+
     number_of_polarons = args_parse.polaron_number
     number_of_oxygen_vacancies = args_parse.oxygen_vacancy_number
-    log.info(f"The calculations will run for {number_of_polarons} {polaron_type} polaron(s) "
-             f"and with {number_of_oxygen_vacancies} oxygen vacancies")
+
+    if number_of_polarons == 0 and number_of_oxygen_vacancies == 0:
+        log.warning(f"No polarons will be created. Exiting. ")
+        return
+
+    if number_of_oxygen_vacancies > 0:
+        log.info(f"{number_of_oxygen_vacancies} oxygen vacancy(ies) will be considered, that"
+                 f" correspond(s) to {number_of_oxygen_vacancies*2} electron polarons")
+
+    log.info(f"The calculations will run with {number_of_polarons} additional {polaron_type} polaron(s)")
+
+    # TODO: if polaron_type is hole we cannot use occupation matrix control method
 
     # 3. Initialize Generator and Run Analysis
     polaron_generator = PolaronGenerator(structure, polaron_type=polaron_type)
-    polaron_generator.assign_oxidation_states()  # Ensure oxidation states are set once
 
-    # run_analysis(pg)
-    #
-    # print("\n=========================================")
-    # print(" Analysis Complete. Ready for DFT Input Generation.")
-    # print("=========================================")
+    if polaron_type in ["electron", "hole"] and number_of_polarons > 0:
+        polaron_candidates = polaron_generator.propose_sites(max_sites=number_of_polarons)
+        display_candidates(polaron_candidates, polaron_type)
+
+    if number_of_oxygen_vacancies > 0:
+        if polaron_type != "electron":
+            print("Calculations with both hole polaron and oxygen vacancies are not possible")
+            return
+        oxygen_vacancies_candidates = polaron_generator.propose_vacancy_sites(max_sites=number_of_oxygen_vacancies)
+        display_candidates(oxygen_vacancies_candidates, 'oxygen vacancy')
+
+    polaron_generator.assign_oxidation_states()  # Ensure oxidation states are set once
+    log.info("Analysis Complete. Ready for DFT Input Generation")
 
 
 if __name__ == "__main__":

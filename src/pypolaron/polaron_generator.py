@@ -76,6 +76,7 @@ class PolaronGenerator:
 
         return distinct_site_indices
 
+    # TODO: add possibility to create electron polarons by introducing an oxygen vacancy
     def propose_sites(
         self, max_sites: int = 5
     ) -> List[Tuple[int, str, Optional[float], float, float]]:
@@ -259,7 +260,7 @@ class PolaronGenerator:
         supercell: Tuple[int, int, int] = (2, 2, 2),
         spin_moment: float = 1.0,
         set_site_magmoms: bool = True,
-        calc_type: str = 'relax',
+        calc_type: str = 'relax-atoms',
         functional: str = 'hse06',
         outdir: str = "polaron_vasp_calc",
     ):
@@ -311,11 +312,11 @@ class PolaronGenerator:
             user_incar["NSW"] = 0
             user_incar["IBRION"] = -1
         # relax-all: both atoms and cell, relax-atoms: atoms only
-        elif calc_type.lower() == "relax-atoms" or calc_type.lower() == "relax-all":
+        elif calc_type.lower() in ["relax-atoms", "relax-all"]:
             user_incar["NSW"] = 99
             user_incar["IBRION"] = 2
-        elif calc_type.lower() == "relax-all":
-            user_incar["ISIF"] = 3
+            if calc_type.lower() == "relax-all":
+                user_incar["ISIF"] = 3
 
         # add functional-specific settings
         if functional.lower() == "hse06":
@@ -347,9 +348,9 @@ class PolaronGenerator:
         supercell: Tuple[int, int, int] = (2, 2, 2),
         spin_moment: float = 1.0,
         set_site_magmoms: bool = True,
-        calc_type: str = "relax",
+        calc_type: str = "relax-atoms",
         functional: str = "hse06",
-        tier: str = "tight",
+        # tier: str = "tight",
         species_dir: str = "./",
         outdir: str = "./fhi_aims_files",
     ):
@@ -361,8 +362,6 @@ class PolaronGenerator:
         NOTE: this writes a minimal control.in; you should tune numerical settings for production.
         """
         # TODO: add functionality to optimize the cell size as done in doped
-        #  alternatively pass ase_atoms and use that instead of pymatgen structure
-        #  add possibility to create electron polarons by introducing an oxygen vacancy
         #  now the default is hse06, add functionality to choose between 3 different options:
         #  1) perform calculations with a single hybrid functional (i.e. hse06 or pbe0)
         #  2) perform calculations with only DFT+U, add functionality to write occupation matrix control
@@ -394,18 +393,50 @@ class PolaronGenerator:
         geom_file = outdir / "geometry.in"
         geom.write_file(geom_file)
 
-        species_defaults = {el: tier for el in scell.symbol_set}
+        # species_defaults = {el: tier for el in scell.symbol_set}
+
+        # TODO: decide how to deal with these additional input settings
+        #  fixed_spin_moment 2.0
+        #  elsi_restart read_and_write 100
+        #  elsi_restart_use_overlap .true.
 
         # Build basic control.in using AimsControlIn
         params = {
-            "xc": functional,
-            "species_defaults": species_defaults,
-            "species_dir": species_dir,
+            "relativistic": "atomic_zora scalar",
+            "collect_eigenvectors": ".false.",
             "k_grid": "1 1 1",
+            "occupation_type": "gaussian 0.001",
             "default_initial_moment": 0.0,
             "spin": "collinear",
+            "charge_mix_param": 0.3,
+            "mixer": "pulay",
             "charge": total_charge,
+            "species_dir": species_dir,
+            "compute_forces": ".true." if calc_type.lower() in ["relax-atoms", "relax-all"] else ".false."
         }
+
+        # Add functional-specific settings
+        if functional.lower() == "hse06":
+            params.update({
+                 "xc": "hse06 0.11",
+                 "hse_unit": "bohr-1",
+             })
+        elif functional.lower() == "pbeu":
+            params.update({
+                 "xc": "pbe", # Base functional
+                 "l_hartree_fock": ".true.", # Enable L(S)DA+U features
+                 # Note: U/J parameters are typically specified per species in control.in,
+                 # which is highly specific. A simple placeholder is used here:
+                 "hubbard_u": "2 0 5.0", # Mock setting: need better implementation for real use
+            })
+        else: # Default PBE
+            params["xc"] = "pbe"
+
+        # Add relaxation settings
+        if calc_type.lower() in ["relax-atoms", "relax-all"]:
+            params["relax_geometry"] = "trm 1e-4"
+            if calc_type.lower() == "relax-all":
+                params["relax_unit_cell"] = "full"
 
         control = AimsControl(params)
         control.write_file(geom, outdir)

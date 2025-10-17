@@ -1,7 +1,12 @@
 import pytest
+import numpy as np
+import shutil
+from collections import Counter
+from unittest.mock import MagicMock, patch
 from pypolaron.polaron_generator import PolaronGenerator
 from pymatgen.core.structure import Structure
 from typing import List, Tuple
+
 
 # We rely on the fixtures from conftest.py: tio2_rutile, nio_rocksalt, symmetry_test_structure
 
@@ -171,3 +176,73 @@ def test_electron_polaron_lto(lto_aims_structure: Structure):
     assert (
         len(li_candidates) == 0
     ), "electron polarons do not localize on lithium atoms in LTO"
+
+
+# Mock the external pymatgen class (MPRelaxSet) to capture the input dictionary
+class MockMPRelaxSet:
+    """Mock class to capture the user_incar_settings passed to MPRelaxSet."""
+
+    LAST_STRUCTURE = None
+    LAST_INCAR = {}
+
+    def __init__(self, structure, user_incar_settings=None, **kwargs):
+        # Store instance attributes
+        self.structure = structure
+        self.user_incar_settings = user_incar_settings if user_incar_settings is not None else {}
+        self.kwargs = kwargs
+
+        # Store parameters as class attributes for easy access in the test function
+        MockMPRelaxSet.LAST_STRUCTURE = structure
+        MockMPRelaxSet.LAST_INCAR = self.user_incar_settings
+
+    def write_input(self, outdir, potcar_spec=True):
+        # We don't actually write files, just simulate success
+        pass
+
+@patch('pypolaron.polaron_generator.MPRelaxSet', new=MockMPRelaxSet)
+@patch('shutil.rmtree')
+@patch('os.makedirs')
+def test_vasp_input_generation(mock_makedirs, mock_rmtree, tio2_rutile, tmp_path):
+    """
+    Tests VASP INCAR generation for HSE06 relaxation, confirming:
+    1. NELECT is correct for electron/hole polarons (charge calculation).
+    2. ISPIN and MAGMOM are set for spin polarization.
+    3. Hybrid functional (HSE06) and relaxation tags are present.
+    """
+    # -----------------------------------------------------------
+    # Test Case 1: Electron Polaron (e-) on a single Ti site (index 0)
+    # Target Site: Ti (index 0)
+    # Primitive cell electrons: 32. Supercell (2x2x2) electrons: 608
+    # -----------------------------------------------------------
+
+    pg_e = PolaronGenerator(tio2_rutile, polaron_type="electron")
+    outdir_e = tmp_path / "vasp_e"
+
+    # Find a single central site for testing
+    site_index_e = 0
+
+    pg_e.write_vasp_input_files(
+        site_index=site_index_e,
+        supercell=(2, 2, 2),
+        spin_moment=1.0,
+        functional="hse06",
+        calc_type="relax-all",
+        outdir=str(outdir_e)
+    )
+
+    # The MockMPRelaxSet instance is available in the patch scope via the mocked class
+    incar_e = MockMPRelaxSet.LAST_INCAR
+    scell_e = MockMPRelaxSet.LAST_STRUCTURE
+
+    assert sum(site.specie.Z for site in scell_e) == 608, "Sanity Check: Supercell electron count is incorrect."
+    assert incar_e["NELECT"] == 609, "Electron Polaron: NELECT should be 609 (608 - (-1))."
+    assert incar_e["ISPIN"] == 2, "Electron Polaron: ISPIN must be 2."
+    assert incar_e["LHFCALC"] is True, "Electron Polaron: HSE06 setting LHFCALC missing."
+    assert incar_e["ISIF"] == 3, "Electron Polaron: Relaxation setting ISIF missing."
+
+    # Check MAGMOM structure: 48 atoms, one of them must be 1.0
+    expected_magmom_structure = {1.0: 1, 0.0: 47}
+    assert isinstance(incar_e["MAGMOM"], Counter)
+    assert incar_e["MAGMOM"] == expected_magmom_structure, "MAGMOM Counter is incorrect."
+    assert np.isclose(sum(incar_e["MAGMOM"].keys()), 1.0), "Total MAGMOM should be 1.0."
+

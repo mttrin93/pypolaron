@@ -84,12 +84,17 @@ class PolaronWorkflow:
         self,
         generator: Optional[PolaronGenerator],
         chosen_site_indices: Union[int, List[int]],
+        chosen_vacancy_site_indices: Union[int, List[int]],
         supercell: Tuple[int, int, int] = (2, 2, 2),
-        add_charge: int = -1,
-        spin_moments: float = None,
+        add_charge: int = -1,   # TODO: obsolete argument
+        spin_moment: float = 1.0,
+        set_site_magmoms: bool = False,
         run_dir_root: str = "polaron_runs",
         species_dir: str = None,
         do_submit: bool = False,
+        calc_type: str = "relax-atoms",
+        functional: str = "hse06",
+        dft_code: str = "aims",
         do_bader: bool = True,
         potential_axis: int = 2,
         dielectric_eps: float = 10.0,
@@ -109,23 +114,36 @@ class PolaronWorkflow:
         pristine_dir = root / "pristine"
         charged_dir = root / "charged"
 
-        # Write pristine inputs (no added charge)
-        # TODO: add functionality where the write_fhi_aims method recongnize if there are polarons or not, here
-        # is adding unecessary magnetic moment to the chose_site_indices atoms
-        generator.write_fhi_aims_input_files(
-            site_index=chosen_site_indices,
-            supercell=supercell,
-            add_charge=0.0,
-            species_dir=species_dir,
+        common_args = {
+            "site_index": chosen_site_indices,
+            "vacancy_site_index": chosen_vacancy_site_indices,
+            "supercell": supercell,
+            "spin_moment": spin_moment,
+            "set_site_magmoms": set_site_magmoms,
+            "calc_type": calc_type,
+            "functional": functional,
+        }
+
+        if dft_code == "aims":
+            write_func = generator.write_fhi_aims_input_files
+            common_args['species_dir'] = species_dir
+        elif dft_code == "vasp":
+            write_func = generator.write_vasp_input_files
+            common_args['potcar_dir'] = species_dir
+        else:
+            raise ValueError(f"Unknown DFT tool: {dft_code}. Must be 'aims' or 'vasp'.")
+
+        # TODO: add here the possibility to perform just charged calculations
+        write_func(
+            **common_args,
             outdir=str(pristine_dir),
+            is_charged_polaron_run=False,
         )
-        # Write charged inputs
-        generator.write_fhi_aims_input_files(
-            site_index=chosen_site_indices,
-            supercell=supercell,
-            add_charge=add_charge,
-            species_dir=species_dir,
+
+        write_func(
+            **common_args,
             outdir=str(charged_dir),
+            is_charged_polaron_run=True,
         )
 
         # 2) Write job scripts

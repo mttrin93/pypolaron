@@ -12,13 +12,17 @@ with MPRester(API_key) as mpr:
 
 # Electron polaron search (extra electron → likely Ti site)
 pg_e = PolaronGenerator(structure, polaron_type="electron")
-candidates_e = pg_e.propose_sites(max_sites=10)
+candidates_e = pg_e.propose_sites(max_sites=1)
 best_sites = candidates_e[0][0]
 print("best sites", candidates_e[0][0])
 
+vacacancy_site_index = 1
 
-pg_e.write_fhi_aims_input_files(best_sites, set_site_magmoms=False,
-                            species_dir='/home/rinaldi/Documents/programs/FHIaims/species_defaults/defaults_2020/tight')
+pg_e.write_vasp_input_files(best_sites, vacacancy_site_index,
+                            set_site_magmoms=False, is_charged_polaron_run=False)
+
+# pg_e.write_fhi_aims_input_files(best_sites, vacacancy_site_index, set_site_magmoms=True,
+#                             species_dir='/home/rinaldi/Documents/programs/FHIaims/species_defaults/defaults_2020/tight')
 
 # pg_e.write_fhi_aims_input_files(best_sites, species_dir=)
 

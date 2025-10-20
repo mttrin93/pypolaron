@@ -150,16 +150,13 @@ class PolaronGenerator:
         return score
 
     def _find_central_site_general_supercell(
-        self, scell: Structure, site_index: Union[int, List[int]]
+        self, scell: Structure, site_index: List[int]
     ) -> List[int]:
         """
         Find the index of the atom in the supercell corresponding to
         a primitive cell site, located closest to the geometric center.
         Works for both cubic and non-cubic supercells.
         """
-        if isinstance(site_index, int):
-            site_index = [site_index]
-
         scell_center = np.mean([site.coords for site in scell.sites], axis=0)
         used_indices = set()
         mapped_indices = []
@@ -222,14 +219,11 @@ class PolaronGenerator:
     def _get_total_charge(
         self,
         scell: Structure,
-        polaron_site_indices: Union[int, List[int]]
+        polaron_site_indices: List[int]
     ) -> int:
         """
         Calculates the total charge for the supercell.
         """
-        if isinstance(polaron_site_indices, int):
-            polaron_site_indices = [polaron_site_indices]
-
         num_polarons = len(polaron_site_indices)
 
         # Calculate Charge
@@ -294,12 +288,15 @@ class PolaronGenerator:
     def write_vasp_input_files(
         self,
         site_index: Union[int, List[int]],
+        vacancy_site_index: Union[int, List[int]],
         supercell: Tuple[int, int, int] = (2, 2, 2),
         spin_moment: float = 1.0,
         set_site_magmoms: bool = True,
         calc_type: str = 'relax-atoms',
         functional: str = 'hse06',
+        potcar_dir: str = "./",
         outdir: str = "polaron_vasp_calc",
+        is_charged_polaron_run: bool = True,
     ):
         """
         Generate a supercell with a seeded polaron (localized spin on chosen site).
@@ -323,16 +320,32 @@ class PolaronGenerator:
         # build supercell
         scell = self.structure * supercell
 
+        if isinstance(site_index, int):
+            site_index = [site_index]
+        if isinstance(vacancy_site_index, int):
+            vacancy_site_index = [vacancy_site_index]
+
+        if is_charged_polaron_run:
+            total_charge = self._get_total_charge(scell, site_index)
+        else:
+            total_charge = 0
+
+        if vacancy_site_index is not None:
+            vacancy_site_index_supercell = self._find_central_site_general_supercell(scell, vacancy_site_index)
+            if vacancy_site_index_supercell:
+                scell.remove_sites(vacancy_site_index_supercell)
+                total_charge += 2
+
+        # TODO: add possibility to assign initial magnetic moment even though the calculation is for pristine
         # assign initial magmom
-        if set_site_magmoms:
+        if set_site_magmoms and is_charged_polaron_run:
             site_index_supercell, magmoms = self._create_magmoms(
                 scell, site_index, spin_moment
             )
             scell.add_site_property("magmom", magmoms)
-        else:
-            site_index_supercell = self._find_central_site_general_supercell(scell, site_index)
+        # else:
+        #     site_index_supercell = self._find_central_site_general_supercell(scell, site_index)
 
-        total_charge = self._get_total_charge(scell, site_index_supercell)
         nelect = sum(site.specie.Z for site in scell) - total_charge
 
         user_incar = {
@@ -345,14 +358,15 @@ class PolaronGenerator:
         }
 
         # add calculation type settings
-        if calc_type.lower() == 'scf':
+        calc_type_lower = calc_type.lower()
+        if calc_type_lower == 'scf':
             user_incar["NSW"] = 0
             user_incar["IBRION"] = -1
         # relax-all: both atoms and cell, relax-atoms: atoms only
-        elif calc_type.lower() in ["relax-atoms", "relax-all"]:
+        elif calc_type_lower in ["relax-atoms", "relax-all"]:
             user_incar["NSW"] = 99
             user_incar["IBRION"] = 2
-            if calc_type.lower() == "relax-all":
+            if calc_type_lower == "relax-all":
                 user_incar["ISIF"] = 3
 
         # add functional-specific settings
@@ -377,19 +391,33 @@ class PolaronGenerator:
             user_incar["LHFCALC"] = False
 
         vis = MPRelaxSet(scell, user_incar_settings=user_incar)
-        vis.write_input(outdir, potcar_spec=True)
+        # vis.write_input(outdir, potcar_spec=True)
+
+        # TODO: test this pseudopotential assignmnets
+        original_psp_dir = os.environ.get("VASP_PSP_DIR")
+
+        try:
+            if potcar_dir:
+                os.environ["VASP_PSP_DIR"] = potcar_dir
+            vis.write_input(outdir, potcar_spec=True)
+        finally:
+            if original_psp_dir is not None:
+                os.environ["VASP_PSP_DIR"] = original_psp_dir
+            elif potcar_dir:
+                del os.environ["VASP_PSP_DIR"]
 
     def write_fhi_aims_input_files(
         self,
         site_index: Union[int, List[int]],
+        vacancy_site_index: Union[int, List[int]],
         supercell: Tuple[int, int, int] = (2, 2, 2),
         spin_moment: float = 1.0,
         set_site_magmoms: bool = True,
         calc_type: str = "relax-atoms",
         functional: str = "hse06",
-        # tier: str = "tight",
         species_dir: str = "./",
         outdir: str = "./fhi_aims_files",
+        is_charged_polaron_run: bool = True,
     ):
         """
         Write a simple FHI-aims 'geometry.in' and 'control.in' that:
@@ -411,19 +439,34 @@ class PolaronGenerator:
             shutil.rmtree(outdir)  # remove previous run
         outdir.mkdir(parents=True, exist_ok=True)
 
-        # supercell structure (pymatgen)
+        # build supercell
         scell = self.structure * supercell
 
+        if isinstance(site_index, int):
+            site_index = [site_index]
+        if isinstance(vacancy_site_index, int):
+            vacancy_site_index = [vacancy_site_index]
+
+        if is_charged_polaron_run:
+            total_charge = self._get_total_charge(scell, site_index)
+        else:
+            total_charge = 0
+
+        if vacancy_site_index is not None:
+            vacancy_site_index_supercell = self._find_central_site_general_supercell(scell, vacancy_site_index)
+            if vacancy_site_index_supercell:
+                scell.remove_sites(vacancy_site_index_supercell)
+                total_charge += 2
+
         # assign initial magmom
-        if set_site_magmoms:
+        if set_site_magmoms and is_charged_polaron_run:
             site_index_supercell, magmoms = self._create_magmoms(
                 scell, site_index, spin_moment
             )
             scell.add_site_property("magmom", magmoms)
-        else:
-            site_index_supercell = self._find_central_site_general_supercell(scell, site_index)
+        # else:
+        #     site_index_supercell = self._find_central_site_general_supercell(scell, site_index)
 
-        total_charge = self._get_total_charge(scell, site_index_supercell)
         scell.remove_oxidation_states()
         # Build geometry.in via pymatgen helper
         geom = AimsGeometry.from_structure(scell)

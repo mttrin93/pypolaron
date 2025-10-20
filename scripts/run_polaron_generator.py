@@ -4,13 +4,14 @@ import os
 import socket
 import getpass
 import sys
-from typing import List, Tuple, Union, Any, Optional
+from typing import List, Tuple, Union, Any, Optional, Dict
 from pathlib import Path
 
 from pymatgen.core.structure import Structure
 from pymatgen.ext.matproj import MPRester
 from pypolaron import __version__
 from pypolaron.polaron_generator import PolaronGenerator
+from pypolaron.workflow import PolaronWorkflow
 from pyfhiaims.geometry import AimsGeometry
 
 hostname = socket.gethostname()
@@ -40,122 +41,48 @@ def display_candidates(candidates: List[Any], title: str):
         elif title in ["electron", "hole"]:
 
             index, element, oxidation_state, coordination_number, score = candidate
-            log.info(f"{[rank]} {title} polaron at atom site index {index} | Element : {element}"
+            log.info(f"{[rank]} {title} polaron at atomic site index {index} | Element : {element}"
                      f"  | Oxidation State: {oxidation_state} | "
                      f"Coordination Number: {coordination_number} | Score: {score:.3f}")
 
-def select_and_generate(
-        pg: PolaronGenerator,
-        candidates: List[Any],
-        analysis_title: str,
-        args_parse: argparse.Namespace
+
+def run_polaron_workflow(
+        polaron_generator: PolaronGenerator,
+        polaron_candidates: List[Tuple[int, str, Optional[float], float, float]],
+        oxygen_vacancy_candidates: List[Tuple[int, str, float]],
+        dft_params: Dict
 ):
-    """Allows the user to select candidates and generates DFT input files."""
+    """
+    Asks the user to select a candidate index to calculate and triggers file generation.
+    """
+    log.info("DFT calculation setup initialization and job submission:")
+    log.info(
+        f"DFT Code: {dft_params['dft_code'].upper()} | Functional: {dft_params['functional']} "
+        f" | Calculation Type: {dft_params['calc_type']}")
 
-    if not candidates:
-        return
+    # Format: (index, element, oxidation_state, coordination_number, score)
+    chosen_polaron_sites = [value[0] for value in polaron_candidates]
+    chosen_oxygen_vacancy_sites = [value[0] for value in oxygen_vacancy_candidates]
 
-    # Interactive selection of sites
-    selection_input = input(
-        f"\nEnter ranks to generate DFT inputs for (e.g., '1' or '1,3,5'). Type 'N' to skip: "
-    ).strip().upper()
+    # Initialize Workflow
+    workflow = PolaronWorkflow(aims_executable_command=dft_params['aims_command'])
 
-    if selection_input == 'N' or not selection_input:
-        log.info("Skipping DFT input file generation.")
-        return
+    # Run the generation
+    workflow.run_polaron_workflow(
+        generator=polaron_generator,
+        chosen_site_indices=chosen_polaron_sites,
+        chosen_vacancy_site_indices=chosen_oxygen_vacancy_sites,
+        supercell=dft_params["supercell"],
+        spin_moment=dft_params["spin_moment"],
+        set_site_magmoms=dft_params["set_site_magmoms"],
+        run_dir_root=dft_params["run_dir_root"],
+        species_dir=dft_params["species_dir"],
+        do_submit=dft_params["do_submit"],
+        calc_type=dft_params["calc_type"],
+        functional=dft_params["functional"],
+        dft_code=dft_params["dft_code"],
+    )
 
-    try:
-        selected_ranks = [int(r.strip()) for r in selection_input.split(',')]
-        if not all(1 <= r <= len(candidates) for r in selected_ranks):
-            raise ValueError("Invalid rank selected.")
-    except ValueError as e:
-        log.warning(f"Invalid input: {e}. Please enter comma-separated numbers within the range.")
-        return
-
-    # Generate files for each selected candidate
-    log.info(f"Starting DFT input generation for {len(selected_ranks)} candidate(s)...")
-
-    for rank in selected_ranks:
-        candidate = candidates[rank - 1]
-        outdir_suffix = f"rank_{rank}"
-
-        # Determine output directory
-        base_outdir = f"{args_parse.dft_tool.lower()}_{args_parse.functional.lower()}_{args_parse.calc_type.lower()}"
-        outdir = os.path.join(base_outdir, outdir_suffix)
-
-        log.info(f"--- Generating inputs for Rank {rank} in directory: {outdir} ---")
-
-        # --- Common Parameters ---
-        common_kwargs = {
-            "supercell": args_parse.supercell,
-            "spin_moment": args_parse.spin_moment,
-            "functional": args_parse.functional,
-            "calc_type": args_parse.calc_type,
-            "outdir": outdir,
-            "set_site_magmoms": True,
-        }
-
-        # --- Case 1: Single/Dimer Polaron (Standard) ---
-        if analysis_title in ["electron polaron", "hole polaron"]:
-            # candidate is: ((site_indices), score, type_str)
-            site_indices, _, site_type = candidate
-
-            if args_parse.dft_tool.lower() == 'vasp':
-                pg.write_vasp_input_files(
-                    site_index=site_indices,
-                    **common_kwargs
-                )
-            elif args_parse.dft_tool.lower() == 'aims':
-                pg.write_fhi_aims_input_files(
-                    site_index=site_indices,
-                    **common_kwargs
-                )
-            log.info(f"Generated {args_parse.dft_tool.upper()} files for {site_type} polaron(s).")
-
-
-        # --- Case 2: Vacancy-Induced Di-Polaron ---
-        elif analysis_title == "vacancy-induced di-polaron":
-            # candidate is: (v_idx, p_pair, score)
-            v_idx, p_pair, _ = candidate
-
-            # NOTE: For V_O, the charge state is fixed at +2 relative to the pristine cell,
-            # meaning we need to pass the vacancy site to be removed AND the two polaron sites for magmoms.
-
-            # The file writer must be updated in your PolaronGenerator to handle the `vacancy_index_primitive`
-            # and the `polaron_site_indices` (p_pair) simultaneously.
-
-            # Assuming the PolaronGenerator is extended to accept a dedicated 'vacancy_index_primitive' argument:
-            vacancy_kwargs = {
-                **common_kwargs,
-                "polaron_site_indices": p_pair,  # Sites for magmoms
-                "vacancy_index_primitive": v_idx,  # Site to remove
-                "set_site_magmoms": True,
-            }
-
-            if args_parse.dft_tool.lower() == 'vasp':
-                # The polaron sites (p_pair) are used for magmoms, vacancy_index is used for structure modification.
-                # Since VASP writer currently takes site_index, we pass the sites for magmoms.
-                # *** You must modify pg.write_vasp_input_files to accept and use the vacancy_index_primitive! ***
-                log.warning(
-                    "WARNING: Assuming PolaronGenerator.write_vasp_input_files accepts 'vacancy_index_primitive'.")
-                pg.write_vasp_input_files(
-                    site_index=p_pair,  # Polaron sites for magmoms
-                    vacancy_index_primitive=v_idx,  # New argument your method must accept
-                    **common_kwargs
-                )
-
-            elif args_parse.dft_tool.lower() == 'aims':
-                # *** You must modify pg.write_fhi_aims_input_files to accept and use the vacancy_index_primitive! ***
-                log.warning(
-                    "WARNING: Assuming PolaronGenerator.write_fhi_aims_input_files accepts 'vacancy_index_primitive'.")
-                pg.write_fhi_aims_input_files(
-                    site_index=p_pair,  # Polaron sites for magmoms
-                    vacancy_index_primitive=v_idx,  # New argument your method must accept
-                    **common_kwargs
-                )
-
-            log.info(
-                f"Generated {args_parse.dft_tool.upper()} files for V_O at index {v_idx} and di-polaron on {p_pair}.")
 
 def main(args):
     parser = argparse.ArgumentParser(prog="pypolaron",
@@ -214,8 +141,7 @@ def main(args):
     )
 
     parser.add_argument(
-        "-s",
-        "--supercell",
+        "-s", "--supercell-dims",
         type=int,
         nargs=3,
         default=(2, 2, 2),
@@ -223,8 +149,7 @@ def main(args):
     )
 
     parser.add_argument(
-        "-dc",
-        "--dft-code",
+        "-dc", "--dft-code",
         type=str,
         choices=['vasp', 'aims'],
         required=True,
@@ -232,16 +157,14 @@ def main(args):
     )
 
     parser.add_argument(
-        "-xf",
-        "--xc-functional",
+        "-xf", "--xc-functional",
         type=str,
         default='hse06',
         help="DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06').",
     )
 
     parser.add_argument(
-        "-ct",
-        "--calc-type",
+        "-ct", "--calc-type",
         type=str,
         choices=['scf', 'relax-atoms', 'relax-all'],
         default='relax-atoms',
@@ -249,11 +172,42 @@ def main(args):
     )
 
     parser.add_argument(
-        "-sm",
-        "--spin-moment",
+        "-sm", "--spin-moment",
         type=float,
         default=1.0,
         help="Initial magnetic moment to set on the polaron site(s) for spin seeding.",
+    )
+
+    parser.add_argument(
+        "-ssm", "--set-site-magmoms",
+        type=bool,
+        default=False,
+        help="Set initial magnetic moment on the polaron site(s) for spin seeding.",
+    )
+
+    parser.add_argument(
+        "-ac", "--aims-command",
+        type=str,
+        default="mpirun -np 8 aims.x",
+        help="Full command to execute FHI-aims (used in job scripts)."
+    )
+
+    parser.add_argument(
+        "-sd", "--species-dir",
+        type=str,
+        help="Directory containing FHI-aims species files."
+    )
+
+    parser.add_argument(
+        "-rdr", "--run-dir-root",
+        type=str,
+        default="polaron_runs",
+        help="Root directory for output calculations.")
+
+    parser.add_argument(
+        "-ds", "--do-submit",
+        action="store_true",
+        help="If set, job scripts are submitted to the cluster immediately (placeholder logic)."
     )
 
     args_parse = parser.parse_args(args)
@@ -261,7 +215,8 @@ def main(args):
     if "log" in args_parse:
         log_file_name = args_parse.log
         log.info("Redirecting log into file {}".format(log_file_name))
-        file_handler = logging.FileHandler(log_file_name, 'a')
+        log_file_name_path = Path(args_parse.run_dir_root) / log_file_name
+        file_handler = logging.FileHandler(log_file_name_path, 'a')
         formatter = logging.Formatter(LOG_FMT)
         file_handler.setFormatter(formatter)
         log.addHandler(file_handler)
@@ -349,11 +304,11 @@ def main(args):
 
     if number_of_oxygen_vacancies > 0:
         log.info(f"{number_of_oxygen_vacancies} oxygen vacancy(ies) will be considered, that"
-                 f" correspond(s) to {number_of_oxygen_vacancies*2} electron polarons")
+                 f" correspond(s) to {number_of_oxygen_vacancies * 2} electron polarons")
 
     if polaron_type == 'electron':
         log.info(f"The calculations will run with {number_of_polarons} additional {polaron_type} polaron(s). "
-                 f"In total {number_of_polarons + number_of_oxygen_vacancies*2} {polaron_type} polarons ")
+                 f"In total {number_of_polarons + number_of_oxygen_vacancies * 2} {polaron_type} polarons ")
     elif polaron_type == 'hole':
         log.info(f"The calculations will run with {number_of_polarons} additional {polaron_type} polaron(s).")
 
@@ -364,14 +319,23 @@ def main(args):
     polaron_generator.assign_oxidation_states()  # Ensure oxidation states are set once
 
     # TODO: should we do this analysis of the polaron candidates in the supercell or in the initial smaller cell?
+    dft_parameters = {
+        "dft_code": args_parse.dft_code, "functional": args_parse.xc_functional,
+        "calc_type": args_parse.calc_type, "supercell": args_parse.supercell_dims,
+        "aims_command": args_parse.aims_command, "species_dir": args_parse.species_dir,
+        "run_dir_root": args_parse.run_dir_root, "do_submit": args_parse.do_submit,
+        "set_site_magmoms": args_parse.set_site_magmoms, "spin_moment": args_parse.spin_moment,
+    }
+
+    polaron_candidates = []
+    new_polaron_candidates = []
+    oxygen_vacancies_candidates = []
 
     if polaron_type in ["electron", "hole"] and number_of_polarons > 0:
         polaron_candidates = polaron_generator.propose_sites(max_sites=number_of_polarons)
 
         log.info(f"Found {len(polaron_candidates)} unique {polaron_type} polaron candidate(s):")
         display_candidates(polaron_candidates, polaron_type)
-    else:
-        polaron_candidates = []
 
     if number_of_oxygen_vacancies > 0:
         oxygen_vacancies_candidates = polaron_generator.propose_vacancy_sites(max_sites=number_of_oxygen_vacancies)
@@ -381,7 +345,7 @@ def main(args):
 
         if oxygen_vacancies_candidates:
             electron_polaron_candidates_from_oxygen_vacancies = polaron_generator.propose_sites(
-                max_sites=number_of_oxygen_vacancies*2 + number_of_polarons)
+                max_sites=number_of_oxygen_vacancies * 2 + number_of_polarons)
 
             if polaron_candidates:
                 new_polaron_candidates = [
@@ -390,17 +354,25 @@ def main(args):
                 ]
             else:
                 new_polaron_candidates = electron_polaron_candidates_from_oxygen_vacancies[
-                                         :number_of_oxygen_vacancies*2 + 1
+                                         :number_of_oxygen_vacancies * 2 + 1
                                          ]
 
             log.info(f"Found {len(new_polaron_candidates)} unique "
                      f"electron polaron candidate(s) from oxygen vacancy generation:")
             display_candidates(new_polaron_candidates,'electron')
 
-    log.info("Analysis Complete. Ready for DFT Input Generation")
+    polaron_candidates.extend(new_polaron_candidates)
 
-    # TODO: start by specifing workdir where the DFT calculations will be performed
+    log.info("Analysis of possible polaron and oxygen vacancies completed. Ready for DFT Input Generation")
 
+    run_polaron_workflow(
+        polaron_generator=polaron_generator,
+        polaron_candidates=polaron_candidates,
+        oxygen_vacancy_candidates=oxygen_vacancies_candidates,
+        dft_params=dft_parameters
+    )
+
+    log.info(f"Input files written to folder {dft_parameters['run_dir_root']}. Jobs submitted to cluster.")
 
 if __name__ == "__main__":
     main(sys.argv[1:])

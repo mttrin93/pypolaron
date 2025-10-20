@@ -183,7 +183,7 @@ def main(args):
 
     parser.add_argument(
         "-ssm", "--set-site-magmoms",
-        type=bool,
+        action="store_true",
         default=False,
         help="Set initial magnetic moment on the polaron site(s) for spin seeding.",
     )
@@ -210,16 +210,19 @@ def main(args):
     parser.add_argument(
         "-ds", "--do-submit",
         action="store_true",
+        default=False,
         help="If set, job scripts are submitted to the cluster immediately (placeholder logic)."
     )
 
     parser.add_argument(
         "-rp", "--run-pristine",
-        type=bool,
+        action="store_true",
         default=False,
         help="A calculation will run for the pristine structure. This is needed for formation "
-             " energy calculations",
+             " energy calculations. Default is flase.",
     )
+
+    # TODO: move all the parser arguments to a cli folder
 
     args_parse = parser.parse_args(args)
 

@@ -81,7 +81,10 @@ def run_polaron_workflow(
         calc_type=dft_params["calc_type"],
         functional=dft_params["functional"],
         dft_code=dft_params["dft_code"],
+        run_pristine=dft_params["run_pristine"],
     )
+    # TODO: have a look at the boolean arguments here (run_pristine, set_site_magmoms), they are not properly recognized
+    #  by argparse
 
 
 def main(args):
@@ -210,6 +213,14 @@ def main(args):
         help="If set, job scripts are submitted to the cluster immediately (placeholder logic)."
     )
 
+    parser.add_argument(
+        "-rp", "--run-pristine",
+        type=bool,
+        default=False,
+        help="A calculation will run for the pristine structure. This is needed for formation "
+             " energy calculations",
+    )
+
     args_parse = parser.parse_args(args)
 
     if "log" in args_parse:
@@ -325,6 +336,7 @@ def main(args):
         "aims_command": args_parse.aims_command, "species_dir": args_parse.species_dir,
         "run_dir_root": args_parse.run_dir_root, "do_submit": args_parse.do_submit,
         "set_site_magmoms": args_parse.set_site_magmoms, "spin_moment": args_parse.spin_moment,
+        "run_pristine": args_parse.run_pristine,
     }
 
     polaron_candidates = []

@@ -95,6 +95,7 @@ class PolaronWorkflow:
         calc_type: str = "relax-atoms",
         functional: str = "hse06",
         dft_code: str = "aims",
+        run_pristine: bool = False,
         do_bader: bool = True,
         potential_axis: int = 2,
         dielectric_eps: float = 10.0,
@@ -111,8 +112,10 @@ class PolaronWorkflow:
         root.mkdir(parents=True, exist_ok=True)
 
         # Directories
-        pristine_dir = root / "pristine"
+        pristine_dir = root / "pristine" if run_pristine else None
         charged_dir = root / "charged"
+
+        script_pr = None
 
         common_args = {
             "site_index": chosen_site_indices,
@@ -133,12 +136,13 @@ class PolaronWorkflow:
         else:
             raise ValueError(f"Unknown DFT tool: {dft_code}. Must be 'aims' or 'vasp'.")
 
-        # TODO: add here the possibility to perform just charged calculations
-        write_func(
-            **common_args,
-            outdir=str(pristine_dir),
-            is_charged_polaron_run=False,
-        )
+        if run_pristine:
+            write_func(
+                **common_args,
+                outdir=str(pristine_dir),
+                is_charged_polaron_run=False,
+            )
+            script_pr = self.write_simple_job_script(pristine_dir)
 
         write_func(
             **common_args,
@@ -147,11 +151,11 @@ class PolaronWorkflow:
         )
 
         # 2) Write job scripts
-        script_pr = self.write_simple_job_script(pristine_dir)
+        pristine_dir_str = str(script_pr) if run_pristine else None
         script_ch = self.write_simple_job_script(charged_dir)
 
         planned = {
-            "pristine_dir": str(pristine_dir),
+            "pristine_dir": pristine_dir_str,
             "charged_dir": str(charged_dir),
             "pristine_script": script_pr,
             "charged_script": script_ch,
@@ -160,7 +164,8 @@ class PolaronWorkflow:
 
         # 3) Optionally submit
         if do_submit:
-            subprocess.run(["bash", script_pr], check=True)
+            if run_pristine:
+                subprocess.run(["bash", script_pr], check=True)
             subprocess.run(["bash", script_ch], check=True)
             planned["submitted"] = True
         else:

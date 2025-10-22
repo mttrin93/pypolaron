@@ -87,7 +87,7 @@ def run_polaron_workflow(
     #  by argparse
 
 
-def main(args):
+def main(args=None):
     parser = argparse.ArgumentParser(prog="pypolaron",
                                      description="Toolkit for automated DFT polaron calculations "
                                                                    "with FHI-AIMS and VASP.\n" +
@@ -124,7 +124,7 @@ def main(args):
         "-pt", "--polaron-type",
         type=str,
         default='electron',
-        help="Polaron type: electron or hole polaron"
+        help="Polaron type: electron or hole polaron. Default is electron."
     )
 
     parser.add_argument(
@@ -140,7 +140,7 @@ def main(args):
         type=int,
         default=0,
         help="Number of added oxygen vacancies. "
-             "The creation of oxygen vacancies leads to the formation of two electron polarons"
+             "The creation of oxygen vacancies leads to the formation of two electron polarons. Default is 0."
     )
 
     parser.add_argument(
@@ -148,22 +148,22 @@ def main(args):
         type=int,
         nargs=3,
         default=(2, 2, 2),
-        help="Supercell dimensions (a, b, c) as three space-separated integers (e.g., 2 2 2)",
+        help="Supercell dimensions (a, b, c) as three space-separated integers. Default is (2, 2, 2)",
     )
 
     parser.add_argument(
         "-dc", "--dft-code",
         type=str,
         choices=['vasp', 'aims'],
-        required=True,
-        help="DFT code to use: 'vasp' or 'aims'",
+        default="aims",
+        help="DFT code to use: 'vasp' or 'aims'. Default is aims.",
     )
 
     parser.add_argument(
         "-xf", "--xc-functional",
         type=str,
         default='hse06',
-        help="DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06').",
+        help="DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06'). Default is hse06.",
     )
 
     parser.add_argument(
@@ -171,28 +171,29 @@ def main(args):
         type=str,
         choices=['scf', 'relax-atoms', 'relax-all'],
         default='relax-atoms',
-        help="Calculation type: 'scf' (static), 'relax-atoms' (ions only), or 'relax-all' (ions and cell).",
+        help="Calculation type: 'scf' (static), 'relax-atoms' (ions only), or 'relax-all' (ions and cell)."
+             "Default is relax-atoms. ",
     )
 
     parser.add_argument(
         "-sm", "--spin-moment",
         type=float,
         default=1.0,
-        help="Initial magnetic moment to set on the polaron site(s) for spin seeding.",
+        help="Initial magnetic moment to set on the polaron site(s) for spin seeding. Default is 1.0",
     )
 
     parser.add_argument(
         "-ssm", "--set-site-magmoms",
         action="store_true",
         default=False,
-        help="Set initial magnetic moment on the polaron site(s) for spin seeding.",
+        help="Set initial magnetic moment on the polaron site(s) for spin seeding. Default is false.",
     )
 
     parser.add_argument(
         "-ac", "--aims-command",
         type=str,
         default="mpirun -np 8 aims.x",
-        help="Full command to execute FHI-aims (used in job scripts)."
+        help="Full command to execute FHI-aims (used in job bin)."
     )
 
     parser.add_argument(
@@ -205,13 +206,14 @@ def main(args):
         "-rdr", "--run-dir-root",
         type=str,
         default="polaron_runs",
-        help="Root directory for output calculations.")
+        help="Root directory for output calculations. Default is ./polaron_runs")
 
     parser.add_argument(
         "-ds", "--do-submit",
         action="store_true",
         default=False,
         help="If set, job scripts are submitted to the cluster immediately (placeholder logic)."
+             "Default is false. "
     )
 
     parser.add_argument(
@@ -219,7 +221,7 @@ def main(args):
         action="store_true",
         default=False,
         help="A calculation will run for the pristine structure. This is needed for formation "
-             " energy calculations. Default is flase.",
+             " energy calculations. Default is false.",
     )
 
     # TODO: move all the parser arguments to a cli folder

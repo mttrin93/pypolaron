@@ -36,6 +36,9 @@ version = {attr = "pypolaron.__version__"}
 where = ["src"]
 include = ["pypolaron", "pypolaron.*"]
 
+[project.scripts]
+run_generator = "pypolaron.bin.run_polaron_generator:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest",

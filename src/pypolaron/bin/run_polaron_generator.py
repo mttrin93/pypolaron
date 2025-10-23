@@ -82,9 +82,9 @@ def run_polaron_workflow(
         functional=dft_params["functional"],
         dft_code=dft_params["dft_code"],
         run_pristine=dft_params["run_pristine"],
+        alpha=dft_params["alpha_exchange"],
     )
-    # TODO: have a look at the boolean arguments here (run_pristine, set_site_magmoms), they are not properly recognized
-    #  by argparse
+
 
 
 def main(args=None):
@@ -163,7 +163,13 @@ def main(args=None):
         "-xf", "--xc-functional",
         type=str,
         default='hse06',
-        help="DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06'). Default is hse06.",
+        help="DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06', 'pbe0'). Default is hse06.",
+    )
+
+    parser.add_argument(
+        "-a", "--alpha-exchange",
+        type=float,
+        help="Fraction of exact exchange (alpha) for hybrid functionals (HSE06/PBE0). Defaults to 0.25."
     )
 
     parser.add_argument(
@@ -341,7 +347,7 @@ def main(args=None):
         "aims_command": args_parse.aims_command, "species_dir": args_parse.species_dir,
         "run_dir_root": args_parse.run_dir_root, "do_submit": args_parse.do_submit,
         "set_site_magmoms": args_parse.set_site_magmoms, "spin_moment": args_parse.spin_moment,
-        "run_pristine": args_parse.run_pristine,
+        "run_pristine": args_parse.run_pristine, "alpha": args_parse.alpha_exchange,
     }
 
     polaron_candidates = []

@@ -334,7 +334,7 @@ class PolaronGenerator:
             vacancy_site_index_supercell = self._find_central_site_general_supercell(scell, vacancy_site_index)
             if vacancy_site_index_supercell:
                 scell.remove_sites(vacancy_site_index_supercell)
-                total_charge += 2
+                total_charge += 2 * len(vacancy_site_index_supercell)
 
         # TODO: add possibility to assign initial magnetic moment even though the calculation is for pristine
         # assign initial magmom
@@ -406,6 +406,55 @@ class PolaronGenerator:
             elif potcar_dir:
                 del os.environ["VASP_PSP_DIR"]
 
+    def _generate_occupation_matrix_content(
+            self, scell: Structure, polaron_indices: List[int]
+    ) -> str:
+        """
+        Generates the content for FHI-aims' occupation_matrix_control.txt file.
+
+        We assume 5x5 matrices (d-orbitals) for the U term, and that the polaron
+        is seeded by putting 1.0 in the first spin-up diagonal element.
+        """
+        matrix_size = 5  # Typical for d-orbitals (5x5 matrix)
+        content = []
+
+        # Generate an empty matrix string for non-polaron sites
+        empty_matrix = '\n'.join([' '.join(['0.00000'] * matrix_size)] * matrix_size)
+
+        # Iterate over every atom in the supercell
+        for i, site in enumerate(scell.sites):
+            # We assume the U term is applied to every site of the species receiving the polaron
+            # This is a simplification; in production, you'd target only the U species.
+
+            # Check if the current supercell site is one of the polaron sites
+            is_polaron_site = i in polaron_indices
+
+            # Determine the unique ID/label for the atom in the supercell
+            atom_index_in_aims = i + 1
+
+            for spin in [1, 2]:
+                header = (
+                    f"occupation matrix (subspace #           {atom_index_in_aims} , spin           {spin} )"
+                )
+                content.append(header)
+
+                matrix_lines = []
+
+                if is_polaron_site and spin == 1:  # Spin 1 = Spin Up (Seeding the polaron)
+                    # Seed the polaron by placing 1.0 in the first diagonal element
+                    seeded_matrix = [['0.00000'] * matrix_size for _ in range(matrix_size)]
+                    seeded_matrix[0][0] = '1.00000'
+
+                    for row in seeded_matrix:
+                        matrix_lines.append(' '.join(row))
+
+                else:  # Spin 2 (Spin Down) or Non-polaron site
+                    matrix_lines.append(empty_matrix)
+
+                content.extend(matrix_lines)
+
+        return '\n'.join(content)
+
     def write_fhi_aims_input_files(
         self,
         site_index: Union[int, List[int]],
@@ -415,6 +464,7 @@ class PolaronGenerator:
         set_site_magmoms: bool = True,
         calc_type: str = "relax-atoms",
         functional: str = "hse06",
+        alpha: float = 0.25,
         species_dir: str = "./",
         outdir: str = "./fhi_aims_files",
         is_charged_polaron_run: bool = True,
@@ -426,13 +476,17 @@ class PolaronGenerator:
         - sets spin collinear and a simple initial moment configuration (spin init block)
         NOTE: this writes a minimal control.in; you should tune numerical settings for production.
         """
+
         # TODO: add functionality to optimize the cell size as done in doped
         #  now the default is hse06, add functionality to choose between 3 different options:
         #  1) perform calculations with a single hybrid functional (i.e. hse06 or pbe0)
-        #  2) perform calculations with only DFT+U, add functionality to write occupation matrix control
+        #  2) perform calculations with only DFT+U
         #  3) firstly perform DFT+U with occ matrix control, then hybrid
         #  4) firstly perform hybrid calculation with atom with one extra electron placed on the electron polaron position, then a second hybrid with the original config
         #  add here the possibility to have electron and hole polarons at the same time (maybe useful?)
+
+        # TODO: in the case od DFT+U verify that the U is written correctly to the control.in file
+        # TODO: write some unit test to verify that the aims control.in files are well written for PBE, PBEU and hybrid
 
         outdir = Path(outdir)
         if outdir.exists():
@@ -456,16 +510,16 @@ class PolaronGenerator:
             vacancy_site_index_supercell = self._find_central_site_general_supercell(scell, vacancy_site_index)
             if vacancy_site_index_supercell:
                 scell.remove_sites(vacancy_site_index_supercell)
-                total_charge += 2
+                total_charge += 2 * len(vacancy_site_index_supercell)
 
+        site_index_supercell = []
         # assign initial magmom
-        if set_site_magmoms and is_charged_polaron_run:
+        if is_charged_polaron_run:
             site_index_supercell, magmoms = self._create_magmoms(
                 scell, site_index, spin_moment
             )
-            scell.add_site_property("magmom", magmoms)
-        # else:
-        #     site_index_supercell = self._find_central_site_general_supercell(scell, site_index)
+            if set_site_magmoms:
+                scell.add_site_property("magmom", magmoms)
 
         scell.remove_oxidation_states()
         # Build geometry.in via pymatgen helper
@@ -495,22 +549,33 @@ class PolaronGenerator:
             "compute_forces": ".true." if calc_type.lower() in ["relax-atoms", "relax-all"] else ".false."
         }
 
+        is_pbeu_run = functional.lower() == "pbeu"
         # Add functional-specific settings
         if functional.lower() == "hse06":
             params.update({
                  "xc": "hse06 0.11",
                  "hse_unit": "bohr-1",
-             })
-        elif functional.lower() == "pbeu":
-            params.update({
-                 "xc": "pbe", # Base functional
-                 "l_hartree_fock": ".true.", # Enable L(S)DA+U features
-                 # Note: U/J parameters are typically specified per species in control.in,
-                 # which is highly specific. A simple placeholder is used here:
-                 "hubbard_u": "2 0 5.0", # Mock setting: need better implementation for real use
+                 "hybrid_xc_coeff": {alpha},
             })
-        else: # Default PBE
+        elif functional.lower() == "pbe0":
+            params.update({
+                 "xc": "pbe0",
+                 "hybrid_xc_coeff": {alpha},
+            })
+        elif is_pbeu_run:
+            params.update({
+                 "xc": "pbe",
+                 "plus_u_petukhov_mixing": "1.0",
+                 "plus_u_matrix_control": ".true.",
+                 # "plus_u_matrix_release": "1.0e-4",  # TODO: understand how to deal with this flag
+                 # "hubbard_u": "2 0 5.0",
+                 # TODO: understand how to set plus_u 3 d 2.65 to the species file: maybe ask the user to provide it and check if the flag plus_u is present?
+            })
+        elif functional.lower() == "pbe":
             params["xc"] = "pbe"
+        else:
+            raise ValueError(f"Unsupported functional '{functional}'. "
+                             f" Supported options are: 'hse06', 'pbe', or 'pbeu'.")
 
         # Add relaxation settings
         if calc_type.lower() in ["relax-atoms", "relax-all"]:
@@ -520,3 +585,9 @@ class PolaronGenerator:
 
         control = AimsControl(params)
         control.write_file(geom, outdir)
+
+        if is_pbeu_run and is_charged_polaron_run:
+            occ_matrix_content = self._generate_occupation_matrix_content(scell, site_index_supercell)
+
+            occupation_matrix_file = outdir / "occupation_matrix_control.txt"
+            occupation_matrix_file.write_text(occ_matrix_content)

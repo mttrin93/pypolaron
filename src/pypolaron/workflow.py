@@ -94,6 +94,7 @@ class PolaronWorkflow:
         do_submit: bool = False,
         calc_type: str = "relax-atoms",
         functional: str = "hse06",
+        alpha: float = 0.25,
         dft_code: str = "aims",
         run_pristine: bool = False,
         do_bader: bool = True,
@@ -125,6 +126,7 @@ class PolaronWorkflow:
             "set_site_magmoms": set_site_magmoms,
             "calc_type": calc_type,
             "functional": functional,
+            "alpha": alpha,
         }
 
         if dft_code == "aims":

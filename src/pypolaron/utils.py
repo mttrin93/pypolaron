@@ -1,8 +1,9 @@
 import matplotlib.pyplot as plt
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import numpy as np
 from pymatgen.core import Structure
 from pathlib import Path
+from dataclasses import dataclass, field
 
 
 def plot_site_occupations(
@@ -91,4 +92,38 @@ def parse_aims_plus_u_params(dftu_str: str) -> Dict[str, List[Tuple[int, str, fl
         parsed_u[element_sym].append(u_tuple)
 
     return parsed_u
+
+@dataclass(frozen=True)  # frozen=True makes the settings immutable, which is good practice for configurations
+class DftSettings:
+    """
+    Configuration parameters for the DFT polaron calculation.
+    """
+    # Core DFT Parameters
+    functional: str = "hse06"
+    dft_code: str = "aims"
+    calc_type: str = "relax-atoms"
+
+    # Execution/Environment Parameters
+    run_dir_root: str = "polaron_runs"
+    species_dir: Optional[str] = None
+    do_submit: bool = False
+    run_pristine: bool = False
+
+    # Structural/Model Parameters
+    supercell: Tuple[int, int, int] = (2, 2, 2)
+    add_charge: int = -1  # TODO: obsolete argument
+
+    # Spin/U/Hybrid Parameters
+    spin_moment: float = 1.0
+    set_site_magmoms: bool = False
+    alpha: float = 0.25
+    hubbard_parameters: Optional[str] = None
+    fix_spin_moment: Optional[float] = None
+    disable_elsi_restart: bool = False
+
+    # Analysis Parameters
+    do_bader: bool = True
+    potential_axis: int = 2
+    dielectric_eps: float = 10.0
+    auto_analyze: bool = True
 

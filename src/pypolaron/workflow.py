@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Tuple, Optional, Union, List
+from typing import Dict, Tuple, Optional, Union, List, Any
 import textwrap
 import numpy as np
 import subprocess
@@ -7,6 +7,8 @@ import json
 
 from pypolaron.polaron_generator import PolaronGenerator
 from pypolaron.polaron_analyzer import PolaronAnalyzer
+from pypolaron.utils import DftSettings
+
 
 # TODO: When seeding multiple polarons, be careful about total charge and spin multiplicity:
 #  two electrons can pair up (singlet) or remain as separate spins — seed spin moments with the sign you want (e.g., both +1.0 for triplet-like initial guess). Check the final spin in aims.out.
@@ -85,26 +87,8 @@ class PolaronWorkflow:
         generator: Optional[PolaronGenerator],
         chosen_site_indices: Union[int, List[int]],
         chosen_vacancy_site_indices: Union[int, List[int]],
-        supercell: Tuple[int, int, int] = (2, 2, 2),
-        add_charge: int = -1,   # TODO: obsolete argument
-        spin_moment: float = 1.0,
-        set_site_magmoms: bool = False,
-        run_dir_root: str = "polaron_runs",
-        species_dir: str = None,
-        do_submit: bool = False,
-        calc_type: str = "relax-atoms",
-        functional: str = "hse06",
-        alpha: float = 0.25,
-        hubbard_parameters: str = None,
-        dft_code: str = "aims",
-        fix_spin_moment: float = None,
-        disable_elsi_restart: bool = False,
-        run_pristine: bool = False,
-        do_bader: bool = True,
-        potential_axis: int = 2,
-        dielectric_eps: float = 10.0,
-        auto_analyze: bool = True,
-    ) -> Dict[str, Union[str, float]]:
+        settings: DftSettings,
+    ) -> Dict[str, Union[str, float, Dict[str, Any]]]:
         """
         High-level orchestrator for polaron calculations + optional analysis.
         auto_analyze: if True, calls PolaronAnalyzer if outputs exist
@@ -112,11 +96,11 @@ class PolaronWorkflow:
         A first run should be performed with do_submit=True to produce aims.out and cube files
         followed by do_submit=False to analyze the outputs
         """
-        root = Path(run_dir_root)
+        root = Path(settings.run_dir_root)
         root.mkdir(parents=True, exist_ok=True)
 
         # Directories
-        pristine_dir = root / "pristine" if run_pristine else None
+        pristine_dir = root / "pristine" if settings.run_pristine else None
         charged_dir = root / "charged"
 
         script_pr = None
@@ -124,27 +108,27 @@ class PolaronWorkflow:
         common_args = {
             "site_index": chosen_site_indices,
             "vacancy_site_index": chosen_vacancy_site_indices,
-            "supercell": supercell,
-            "spin_moment": spin_moment,
-            "set_site_magmoms": set_site_magmoms,
-            "calc_type": calc_type,
-            "functional": functional,
-            "alpha": alpha,
-            "hubbard_parameters": hubbard_parameters,
-            "fix_spin_moment": fix_spin_moment,
-            "disable_elsi_restart": disable_elsi_restart,
+            "supercell": settings.supercell,
+            "spin_moment": settings.spin_moment,
+            "set_site_magmoms": settings.set_site_magmoms,
+            "calc_type": settings.calc_type,
+            "functional": settings.functional,
+            "alpha": settings.alpha,
+            "hubbard_parameters": settings.hubbard_parameters,
+            "fix_spin_moment": settings.fix_spin_moment,
+            "disable_elsi_restart": settings.disable_elsi_restart,
         }
 
-        if dft_code == "aims":
+        if settings.dft_code == "aims":
             write_func = generator.write_fhi_aims_input_files
-            common_args['species_dir'] = species_dir
-        elif dft_code == "vasp":
+            common_args['species_dir'] = settings.species_dir
+        elif settings.dft_code == "vasp":
             write_func = generator.write_vasp_input_files
-            common_args['potcar_dir'] = species_dir
+            common_args['potcar_dir'] = settings.species_dir
         else:
-            raise ValueError(f"Unknown DFT tool: {dft_code}. Must be 'aims' or 'vasp'.")
+            raise ValueError(f"Unknown DFT tool: {settings.dft_code}. Must be 'aims' or 'vasp'.")
 
-        if run_pristine:
+        if settings.run_pristine:
             write_func(
                 **common_args,
                 outdir=str(pristine_dir),
@@ -159,7 +143,7 @@ class PolaronWorkflow:
         )
 
         # 2) Write job scripts
-        pristine_dir_str = str(script_pr) if run_pristine else None
+        pristine_dir_str = str(script_pr) if settings.run_pristine else None
         script_ch = self.write_simple_job_script(charged_dir)
 
         planned = {
@@ -171,8 +155,8 @@ class PolaronWorkflow:
         }
 
         # 3) Optionally submit
-        if do_submit:
-            if run_pristine:
+        if settings.do_submit:
+            if settings.run_pristine:
                 subprocess.run(["bash", script_pr], check=True)
             subprocess.run(["bash", script_ch], check=True)
             planned["submitted"] = True
@@ -183,7 +167,7 @@ class PolaronWorkflow:
         report = {"planned": planned}
 
         # 4) Optional post-processing
-        if auto_analyze:
+        if settings.auto_analyze:
             try:
                 analyzer = PolaronAnalyzer(
                     fermi_energy=self.fermi_energy,
@@ -207,7 +191,7 @@ class PolaronWorkflow:
                             [0, 0, 0]
                         ),  # placeholder: pass real defect coords
                         site_index_supercell=chosen_site_indices[0],
-                        total_charge=add_charge,
+                        total_charge=settings.add_charge,
                         pot_cube_pristine=(
                             str(potential_cube_pristine)
                             if potential_cube_pristine.exists()

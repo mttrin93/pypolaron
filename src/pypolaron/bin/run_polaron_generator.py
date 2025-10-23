@@ -4,7 +4,7 @@ import os
 import socket
 import getpass
 import sys
-from typing import List, Tuple, Union, Any, Optional, Dict
+from typing import List, Tuple, Union, Any, Optional, Dict, TypedDict
 from pathlib import Path
 
 from pymatgen.core.structure import Structure
@@ -12,6 +12,7 @@ from pymatgen.ext.matproj import MPRester
 from pypolaron import __version__
 from pypolaron.polaron_generator import PolaronGenerator
 from pypolaron.workflow import PolaronWorkflow
+from pypolaron.utils import DftSettings
 from pyfhiaims.geometry import AimsGeometry
 
 hostname = socket.gethostname()
@@ -23,6 +24,24 @@ logging.basicConfig(level=logging.INFO, format=LOG_FMT, datefmt="%Y/%m/%d %H:%M:
 log = logging.getLogger()
 
 DEFAULT_SEED = 42
+
+
+class DftParameters(TypedDict):
+    dft_code: str
+    functional: str
+    calc_type: str
+    supercell: Tuple[int, int, int]
+    aims_command: str
+    species_dir: Optional[str]
+    run_dir_root: str
+    do_submit: bool
+    set_site_magmoms: bool
+    spin_moment: float
+    run_pristine: bool
+    alpha: float
+    hubbard_parameters: Optional[str]
+    fix_spin_moment: Optional[float]
+    disable_elsi_restart: bool
 
 
 def display_candidates(candidates: List[Any], title: str):
@@ -50,7 +69,7 @@ def run_polaron_workflow(
         polaron_generator: PolaronGenerator,
         polaron_candidates: List[Tuple[int, str, Optional[float], float, float]],
         oxygen_vacancy_candidates: List[Tuple[int, str, float]],
-        dft_params: Dict
+        dft_params: DftParameters
 ):
     """
     Asks the user to select a candidate index to calculate and triggers file generation.
@@ -65,29 +84,22 @@ def run_polaron_workflow(
     chosen_oxygen_vacancy_sites = [value[0] for value in oxygen_vacancy_candidates]
 
     # Initialize Workflow
-    workflow = PolaronWorkflow(aims_executable_command=dft_params['aims_command'])
+    workflow = PolaronWorkflow(aims_executable_command=dft_params["aims_command"])
+
+    dft_parameters_for_workflow = {
+        key: value
+        for key, value in dft_params.items()
+        if key not in ["aims_command"]
+    }
+    settings = DftSettings(**dft_parameters_for_workflow)
 
     # Run the generation
     workflow.run_polaron_workflow(
         generator=polaron_generator,
         chosen_site_indices=chosen_polaron_sites,
         chosen_vacancy_site_indices=chosen_oxygen_vacancy_sites,
-        supercell=dft_params["supercell"],
-        spin_moment=dft_params["spin_moment"],
-        set_site_magmoms=dft_params["set_site_magmoms"],
-        run_dir_root=dft_params["run_dir_root"],
-        species_dir=dft_params["species_dir"],
-        do_submit=dft_params["do_submit"],
-        calc_type=dft_params["calc_type"],
-        functional=dft_params["functional"],
-        dft_code=dft_params["dft_code"],
-        run_pristine=dft_params["run_pristine"],
-        alpha=dft_params["alpha_exchange"],
-        hubbard_parameters=dft_params["hubbard_parameters"],
-        fix_spin_moment=dft_params["fix_spin_moment"],
-        disable_elsi_restart=dft_params["disable_elsi_restart"],
+        settings=settings,
     )
-
 
 
 def main(args=None):
@@ -97,12 +109,15 @@ def main(args=None):
                                                                    "version: {}".format(__version__),
                                      formatter_class=argparse.RawTextHelpFormatter
                                      )
+
     source_group = parser.add_mutually_exclusive_group(required=True)
+
     source_group.add_argument(
         "-f", "--file",
         type=str,
         help="Path to a structure file (i.e., POSCAR, .cif, geometry.in, structure.xyz)"
     )
+
     source_group.add_argument(
         "-mq", "--mp-query",
          type=str,
@@ -256,8 +271,6 @@ def main(args=None):
              " energy calculations. Default is false.",
     )
 
-    # TODO: move all the parser arguments to a cli folder
-
     args_parse = parser.parse_args(args)
 
     if "log" in args_parse:
@@ -375,7 +388,7 @@ def main(args=None):
         "aims_command": args_parse.aims_command, "species_dir": args_parse.species_dir,
         "run_dir_root": args_parse.run_dir_root, "do_submit": args_parse.do_submit,
         "set_site_magmoms": args_parse.set_site_magmoms, "spin_moment": args_parse.spin_moment,
-        "run_pristine": args_parse.run_pristine, "alpha_exchange": args_parse.alpha_exchange,
+        "run_pristine": args_parse.run_pristine, "alpha": args_parse.alpha_exchange,
         "hubbard_parameters": args_parse.hubbard_parameters, "fix_spin_moment": args_parse.fix_spin_moment,
         "disable_elsi_restart": args_parse.disable_elsi_restart,
     }

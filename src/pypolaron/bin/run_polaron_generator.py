@@ -83,6 +83,7 @@ def run_polaron_workflow(
         dft_code=dft_params["dft_code"],
         run_pristine=dft_params["run_pristine"],
         alpha=dft_params["alpha_exchange"],
+        hubbard_parameters=dft_params["hubbard_parameters"],
     )
 
 
@@ -167,8 +168,15 @@ def main(args=None):
     )
 
     parser.add_argument(
+        "-hp", "--hubbard-parameters",
+        type=str,
+        help="Specify Hubbard parameters as a element:orbital:U string (e.g., 'Ti:3d:2.65,Fe:3d:4.0')",
+    )
+
+    parser.add_argument(
         "-a", "--alpha-exchange",
         type=float,
+        default=0.25,
         help="Fraction of exact exchange (alpha) for hybrid functionals (HSE06/PBE0). Defaults to 0.25."
     )
 
@@ -347,7 +355,8 @@ def main(args=None):
         "aims_command": args_parse.aims_command, "species_dir": args_parse.species_dir,
         "run_dir_root": args_parse.run_dir_root, "do_submit": args_parse.do_submit,
         "set_site_magmoms": args_parse.set_site_magmoms, "spin_moment": args_parse.spin_moment,
-        "run_pristine": args_parse.run_pristine, "alpha": args_parse.alpha_exchange,
+        "run_pristine": args_parse.run_pristine, "alpha_exchange": args_parse.alpha_exchange,
+        "hubbard_parameters": args_parse.hubbard_parameters,
     }
 
     polaron_candidates = []
@@ -395,7 +404,9 @@ def main(args=None):
         dft_params=dft_parameters
     )
 
-    log.info(f"Input files written to folder {dft_parameters['run_dir_root']}. Jobs submitted to cluster.")
+    log.info(f"Input files written to folder {dft_parameters['run_dir_root']}")
+    if args_parse.do_submit:
+        log.info("Jobs submitted to cluster")
 
 if __name__ == "__main__":
     main(sys.argv[1:])

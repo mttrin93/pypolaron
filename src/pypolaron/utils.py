@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
-from typing import List
+from typing import List, Dict, Tuple
 import numpy as np
+from pymatgen.core import Structure
+from pathlib import Path
 
 
 def plot_site_occupations(
@@ -39,3 +41,54 @@ def plot_site_occupations(
     plt.title(title)
     plt.axis("equal")
     plt.show()
+
+def parse_aims_plus_u_params(dftu_str: str) -> Dict[str, List[Tuple[int, str, float]]]:
+    """
+    Parses a DFT+U string (e.g., 'Ti:3d:4.5') into the FHI-aims 'plus_u' structure.
+
+    FHI-aims format required: {"Element": [(n_quantum, 'l_char', U_value)]}
+    The orbital character must be extracted from the orbital string (e.g., '3d' -> 'd').
+    """
+    if not dftu_str:
+        return {}
+
+    parsed_u = {}
+
+    # Example format expected: "Mg:3d:2.65,Ti:3d:4.5" (J term is ignored/set to 0 for AIMS U)
+    for term in dftu_str.split(','):
+        parts = term.strip().split(':')
+
+        if len(parts) < 3:
+            print(f"Skipping malformed DFT+U term (requires Element:Orbital:U): {term}")
+            continue
+
+        element_sym = parts[0].strip()
+        orbital_str = parts[1].strip()
+        u_value = float(parts[2].strip())
+
+        # 1. Extract n (principal quantum number) and l (angular momentum character)
+        try:
+            # Orbital is typically in the form '3d', '2p', etc.
+            n_quantum = int(orbital_str[0])
+            l_char = orbital_str[1].lower()
+
+            if l_char not in ['s', 'p', 'd', 'f']:
+                print(f"Invalid orbital character '{l_char}' in term {term}. Skipping.")
+                continue
+
+        except (IndexError, ValueError):
+            print(f"Could not parse orbital string '{orbital_str}'. Skipping term {term}.")
+            continue
+
+        # 2. Assemble the required tuple structure
+        u_tuple = (n_quantum, l_char, u_value)
+
+        # 3. Assemble the required dictionary structure: List of tuples
+        # Note: If the element is already present, we append the tuple (supporting multiple U per element)
+        if element_sym not in parsed_u:
+            parsed_u[element_sym] = []
+
+        parsed_u[element_sym].append(u_tuple)
+
+    return parsed_u
+

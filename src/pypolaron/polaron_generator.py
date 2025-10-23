@@ -5,6 +5,7 @@ from pymatgen.analysis.bond_valence import BVAnalyzer
 from pymatgen.analysis.local_env import CrystalNN
 from pymatgen.core.periodic_table import Element
 
+from pypolaron.utils import parse_aims_plus_u_params
 # from pyfhiaims import AimsControlIn, AimsGeometryIn
 from pyfhiaims.geometry import AimsGeometry
 from pyfhiaims.control import AimsControl
@@ -417,19 +418,11 @@ class PolaronGenerator:
         """
         matrix_size = 5  # Typical for d-orbitals (5x5 matrix)
         content = []
-
-        # Generate an empty matrix string for non-polaron sites
         empty_matrix = '\n'.join([' '.join(['0.00000'] * matrix_size)] * matrix_size)
 
-        # Iterate over every atom in the supercell
         for i, site in enumerate(scell.sites):
-            # We assume the U term is applied to every site of the species receiving the polaron
-            # This is a simplification; in production, you'd target only the U species.
 
-            # Check if the current supercell site is one of the polaron sites
             is_polaron_site = i in polaron_indices
-
-            # Determine the unique ID/label for the atom in the supercell
             atom_index_in_aims = i + 1
 
             for spin in [1, 2]:
@@ -464,6 +457,7 @@ class PolaronGenerator:
         set_site_magmoms: bool = True,
         calc_type: str = "relax-atoms",
         functional: str = "hse06",
+        hubbard_parameters: str = None,
         alpha: float = 0.25,
         species_dir: str = "./",
         outdir: str = "./fhi_aims_files",
@@ -484,9 +478,6 @@ class PolaronGenerator:
         #  3) firstly perform DFT+U with occ matrix control, then hybrid
         #  4) firstly perform hybrid calculation with atom with one extra electron placed on the electron polaron position, then a second hybrid with the original config
         #  add here the possibility to have electron and hole polarons at the same time (maybe useful?)
-
-        # TODO: in the case od DFT+U verify that the U is written correctly to the control.in file
-        # TODO: write some unit test to verify that the aims control.in files are well written for PBE, PBEU and hybrid
 
         outdir = Path(outdir)
         if outdir.exists():
@@ -563,13 +554,13 @@ class PolaronGenerator:
                  "hybrid_xc_coeff": {alpha},
             })
         elif is_pbeu_run:
+            plus_u_values = parse_aims_plus_u_params(hubbard_parameters)
             params.update({
                  "xc": "pbe",
                  "plus_u_petukhov_mixing": "1.0",
                  "plus_u_matrix_control": ".true.",
                  # "plus_u_matrix_release": "1.0e-4",  # TODO: understand how to deal with this flag
-                 # "hubbard_u": "2 0 5.0",
-                 # TODO: understand how to set plus_u 3 d 2.65 to the species file: maybe ask the user to provide it and check if the flag plus_u is present?
+                 "plus_u": plus_u_values,
             })
         elif functional.lower() == "pbe":
             params["xc"] = "pbe"
@@ -587,7 +578,7 @@ class PolaronGenerator:
         control.write_file(geom, outdir)
 
         if is_pbeu_run and is_charged_polaron_run:
-            occ_matrix_content = self._generate_occupation_matrix_content(scell, site_index_supercell)
+            occupation_matrix_content = self._generate_occupation_matrix_content(scell, site_index_supercell)
 
             occupation_matrix_file = outdir / "occupation_matrix_control.txt"
-            occupation_matrix_file.write_text(occ_matrix_content)
+            occupation_matrix_file.write_text(occupation_matrix_content)

@@ -95,6 +95,7 @@ class PolaronWorkflow:
         calc_type: str = "relax-atoms",
         functional: str = "hse06",
         alpha: float = 0.25,
+        hubbard_parameters: str = None,
         dft_code: str = "aims",
         run_pristine: bool = False,
         do_bader: bool = True,
@@ -127,6 +128,7 @@ class PolaronWorkflow:
             "calc_type": calc_type,
             "functional": functional,
             "alpha": alpha,
+            "hubbard_parameters": hubbard_parameters,
         }
 
         if dft_code == "aims":

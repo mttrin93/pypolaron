@@ -97,6 +97,8 @@ class PolaronWorkflow:
         alpha: float = 0.25,
         hubbard_parameters: str = None,
         dft_code: str = "aims",
+        fix_spin_moment: float = None,
+        disable_elsi_restart: bool = False,
         run_pristine: bool = False,
         do_bader: bool = True,
         potential_axis: int = 2,
@@ -129,6 +131,8 @@ class PolaronWorkflow:
             "functional": functional,
             "alpha": alpha,
             "hubbard_parameters": hubbard_parameters,
+            "fix_spin_moment": fix_spin_moment,
+            "disable_elsi_restart": disable_elsi_restart,
         }
 
         if dft_code == "aims":

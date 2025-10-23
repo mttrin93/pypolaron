@@ -459,6 +459,8 @@ class PolaronGenerator:
         functional: str = "hse06",
         hubbard_parameters: str = None,
         alpha: float = 0.25,
+        fix_spin_moment: float = None,
+        disable_elsi_restart: bool = False,
         species_dir: str = "./",
         outdir: str = "./fhi_aims_files",
         is_charged_polaron_run: bool = True,
@@ -476,8 +478,8 @@ class PolaronGenerator:
         #  1) perform calculations with a single hybrid functional (i.e. hse06 or pbe0)
         #  2) perform calculations with only DFT+U
         #  3) firstly perform DFT+U with occ matrix control, then hybrid
-        #  4) firstly perform hybrid calculation with atom with one extra electron placed on the electron polaron position, then a second hybrid with the original config
-        #  add here the possibility to have electron and hole polarons at the same time (maybe useful?)
+        #  4) firstly perform hybrid calculation with atom with one extra electron placed on the electron polaron position,
+        #  then a second hybrid with the original config
 
         outdir = Path(outdir)
         if outdir.exists():
@@ -520,11 +522,6 @@ class PolaronGenerator:
 
         # species_defaults = {el: tier for el in scell.symbol_set}
 
-        # TODO: decide how to deal with these additional input settings
-        #  fixed_spin_moment 2.0
-        #  elsi_restart read_and_write 100
-        #  elsi_restart_use_overlap .true.
-
         # Build basic control.in using AimsControlIn
         params = {
             "relativistic": "atomic_zora scalar",
@@ -539,6 +536,15 @@ class PolaronGenerator:
             "species_dir": species_dir,
             "compute_forces": ".true." if calc_type.lower() in ["relax-atoms", "relax-all"] else ".false."
         }
+
+        if fix_spin_moment is not None:
+            params["fix_spin_moment"] = fix_spin_moment
+
+        if not disable_elsi_restart:
+            params.update({
+                "elsi_restart": "read_and_write 100",
+                "elsi_restart_use_overlap": ".true.",
+            })
 
         is_pbeu_run = functional.lower() == "pbeu"
         # Add functional-specific settings
@@ -559,7 +565,6 @@ class PolaronGenerator:
                  "xc": "pbe",
                  "plus_u_petukhov_mixing": "1.0",
                  "plus_u_matrix_control": ".true.",
-                 # "plus_u_matrix_release": "1.0e-4",  # TODO: understand how to deal with this flag
                  "plus_u": plus_u_values,
             })
         elif functional.lower() == "pbe":

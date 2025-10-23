@@ -84,6 +84,8 @@ def run_polaron_workflow(
         run_pristine=dft_params["run_pristine"],
         alpha=dft_params["alpha_exchange"],
         hubbard_parameters=dft_params["hubbard_parameters"],
+        fix_spin_moment=dft_params["fix_spin_moment"],
+        disable_elsi_restart=dft_params["disable_elsi_restart"],
     )
 
 
@@ -171,6 +173,22 @@ def main(args=None):
         "-hp", "--hubbard-parameters",
         type=str,
         help="Specify Hubbard parameters as a element:orbital:U string (e.g., 'Ti:3d:2.65,Fe:3d:4.0')",
+    )
+
+    parser.add_argument(
+        "-fsp", "--fix-spin-moment",
+        type=float,
+        default=None,
+        help="Specify fixed_spin_moment for FHI-aims calculation, that allows to enforce fixed overall spin "
+             "moment."
+    )
+
+    parser.add_argument(
+        "-der", "--disable-elsi-restart",
+        action="store_true",
+        default=False,
+        help="If set, elsi_restart and elsi_restart_use_overlap will not be used. Its used is recommended. It"
+             "will be disabled when switching to other type of functional "
     )
 
     parser.add_argument(
@@ -342,13 +360,15 @@ def main(args=None):
     elif polaron_type == 'hole':
         log.info(f"The calculations will run with {number_of_polarons} additional {polaron_type} polaron(s).")
 
-    # TODO: if polaron_type is hole we cannot use occupation matrix control method
+    if args_parse.xc_functional.lower() == 'pbeu' and polaron_type == 'hole':
+        log.warning("PBE+U not possible with hole polarons. Occupation matrix control works only for electron"
+                    "polarons. Please switch to hybrid functionals. Exiting ")
+        return
 
     # 3. Initialize Generator and Run Analysis
     polaron_generator = PolaronGenerator(structure, polaron_type=polaron_type)
     polaron_generator.assign_oxidation_states()  # Ensure oxidation states are set once
 
-    # TODO: should we do this analysis of the polaron candidates in the supercell or in the initial smaller cell?
     dft_parameters = {
         "dft_code": args_parse.dft_code, "functional": args_parse.xc_functional,
         "calc_type": args_parse.calc_type, "supercell": args_parse.supercell_dims,
@@ -356,7 +376,8 @@ def main(args=None):
         "run_dir_root": args_parse.run_dir_root, "do_submit": args_parse.do_submit,
         "set_site_magmoms": args_parse.set_site_magmoms, "spin_moment": args_parse.spin_moment,
         "run_pristine": args_parse.run_pristine, "alpha_exchange": args_parse.alpha_exchange,
-        "hubbard_parameters": args_parse.hubbard_parameters,
+        "hubbard_parameters": args_parse.hubbard_parameters, "fix_spin_moment": args_parse.fix_spin_moment,
+        "disable_elsi_restart": args_parse.disable_elsi_restart,
     }
 
     polaron_candidates = []

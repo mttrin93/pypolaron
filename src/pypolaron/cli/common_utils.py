@@ -4,111 +4,55 @@ import os
 import socket
 import getpass
 import sys
-from typing import List, Tuple, Union, Any, Optional, Dict, TypedDict
+from typing import List, Tuple, Union, Any, Optional, Dict
 from pathlib import Path
 
 from pymatgen.core.structure import Structure
 from pymatgen.ext.matproj import MPRester
 from pypolaron import __version__
-from pypolaron.polaron_generator import PolaronGenerator
-from pypolaron.workflow import PolaronWorkflow
-from pypolaron.utils import DftSettings
 from pyfhiaims.geometry import AimsGeometry
+from pypolaron.utils import DftSettings, DftParameters # Assuming DftParameters is TypedDict for the raw args
+from pypolaron.workflow import PolaronWorkflow
+from pypolaron.polaron_generator import PolaronGenerator
 
+# --- Global Setup ---
 hostname = socket.gethostname()
 username = getpass.getuser()
 
-
 LOG_FMT = '%(asctime)s %(levelname).1s - %(message)s'.format(hostname)
 logging.basicConfig(level=logging.INFO, format=LOG_FMT, datefmt="%Y/%m/%d %H:%M:%S")
-log = logging.getLogger()
-
-DEFAULT_SEED = 42
+log = logging.getLogger('pypolaron')
 
 
-class DftParameters(TypedDict):
-    dft_code: str
-    functional: str
-    calc_type: str
-    supercell: Tuple[int, int, int]
-    aims_command: str
-    species_dir: Optional[str]
-    run_dir_root: str
-    do_submit: bool
-    set_site_magmoms: bool
-    spin_moment: float
-    run_pristine: bool
-    alpha: float
-    hubbard_parameters: Optional[str]
-    fix_spin_moment: Optional[float]
-    disable_elsi_restart: bool
+def setup_cli_logging(args_parse: argparse.Namespace):
+    """Sets up file logging based on CLI arguments."""
+    log_file_name = args_parse.log
+    log.info(f"Redirecting log into file {log_file_name}")
+    log_file_name_path = Path(args_parse.run_dir_root) / log_file_name
 
+    # Ensure root directory exists before setting up file handler
+    Path(args_parse.run_dir_root).mkdir(parents=True, exist_ok=True)
 
-def display_candidates(candidates: List[Any], title: str):
-    """Prints the ranked list of candidates in a readable format."""
-    if not candidates:
-        log.info("No Plausible Candidates Found. Exiting.")
-        return
+    file_handler = logging.FileHandler(log_file_name_path, 'a')
+    formatter = logging.Formatter(LOG_FMT)
+    file_handler.setFormatter(formatter)
 
-    for i, candidate in enumerate(candidates):
-        rank = i + 1
-        if title == "oxygen vacancy":
+    # Only add the handler if it's not already there (prevents duplication on multiple runs)
+    if not any(isinstance(h, logging.FileHandler) for h in log.handlers):
+        log.addHandler(file_handler)
 
-            index, element, score = candidate
-            log.info(f"{[rank]} Oxygen vacancy at atomic site index {index} | Score: {score:.3f}")
+    log.info("PyPolaron CLI Initialized.")
+    log.info(f"Hostname: {hostname}")
+    log.info(f"Username: {username}")
+    log.info(f"pypolaron version: {__version__}")
 
-        elif title in ["electron", "hole"]:
-
-            index, element, oxidation_state, coordination_number, score = candidate
-            log.info(f"{[rank]} {title} polaron at atomic site index {index} | Element : {element}"
-                     f"  | Oxidation State: {oxidation_state} | "
-                     f"Coordination Number: {coordination_number} | Score: {score:.3f}")
-
-
-def run_polaron_workflow(
-        polaron_generator: PolaronGenerator,
-        polaron_candidates: List[Tuple[int, str, Optional[float], float, float]],
-        oxygen_vacancy_candidates: List[Tuple[int, str, float]],
-        dft_params: DftParameters
-):
-    """
-    Asks the user to select a candidate index to calculate and triggers file generation.
-    """
-    log.info("DFT calculation setup initialization and job submission:")
-    log.info(
-        f"DFT Code: {dft_params['dft_code'].upper()} | Functional: {dft_params['functional']} "
-        f" | Calculation Type: {dft_params['calc_type']}")
-
-    # Format: (index, element, oxidation_state, coordination_number, score)
-    chosen_polaron_sites = [value[0] for value in polaron_candidates]
-    chosen_oxygen_vacancy_sites = [value[0] for value in oxygen_vacancy_candidates]
-
-    # Initialize Workflow
-    workflow = PolaronWorkflow(aims_executable_command=dft_params["aims_command"])
-
-    dft_parameters_for_workflow = {
-        key: value
-        for key, value in dft_params.items()
-        if key not in ["aims_command"]
-    }
-    settings = DftSettings(**dft_parameters_for_workflow)
-
-    # Run the generation
-    workflow.run_polaron_workflow(
-        generator=polaron_generator,
-        chosen_site_indices=chosen_polaron_sites,
-        chosen_vacancy_site_indices=chosen_oxygen_vacancy_sites,
-        settings=settings,
+def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentParser:
+    """Creates the base ArgumentParser instance with all shared arguments."""
+    parser = argparse.ArgumentParser(
+        prog=prog_name,
+        description=description + f"\nVersion: {__version__}",
+        formatter_class=argparse.RawTextHelpFormatter
     )
-
-
-def main(args=None):
-    parser = argparse.ArgumentParser(prog="pypolaron",
-                                     description="Toolkit for automated DFT polaron calculations "
-                                                                   "with FHI-AIMS and VASP.\n" +
-                                                                   "version: {}".format(__version__),
-                                     formatter_class=argparse.RawTextHelpFormatter
-                                     )
 
     source_group = parser.add_mutually_exclusive_group(required=True)
 
@@ -207,7 +151,7 @@ def main(args=None):
     )
 
     parser.add_argument(
-        "-a", "--alpha-exchange",
+        "-a", "--alpha",
         type=float,
         default=0.25,
         help="Fraction of exact exchange (alpha) for hybrid functionals (HSE06/PBE0). Defaults to 0.25."
@@ -271,30 +215,18 @@ def main(args=None):
              " energy calculations. Default is false.",
     )
 
-    args_parse = parser.parse_args(args)
+    return parser
 
-    if "log" in args_parse:
-        log_file_name = args_parse.log
-        log.info("Redirecting log into file {}".format(log_file_name))
-        log_file_name_path = Path(args_parse.run_dir_root) / log_file_name
-        file_handler = logging.FileHandler(log_file_name_path, 'a')
-        formatter = logging.Formatter(LOG_FMT)
-        file_handler.setFormatter(formatter)
-        log.addHandler(file_handler)
 
-    log.info("PyPolaron High-Throughput Generator command line interface ")
-    log.info(f"Hostname: {hostname}")
-    log.info(f"Username: {username}")
-    log.info(f"pypolaron version: {__version__}")
-
+def load_structure(args_parse: argparse.Namespace) -> Optional[Structure]:
+    """Loads structure from file or Materials Project."""
     structure: Optional[Structure] = None
-
     if args_parse.file:
         structure_file_path = args_parse.file
         log.info(f"Try to read initial structure from the filepath: {os.path.abspath(structure_file_path)}")
         if not os.path.exists(structure_file_path):
             log.warning(f"ERROR: File not found at {structure_file_path}")
-            return
+            return None
 
         path = Path(structure_file_path)
         is_aims_file = path.name.lower() in ["geometry.in"] or path.suffix.lower() in [".in"]
@@ -305,10 +237,10 @@ def main(args=None):
                 log.info(f"File loaded with AIMS parser: {path.name}")
             else:
                 structure = Structure.from_file(structure_file_path)
-                log.warning(f"File loaded with universal pymatgen parser: {path.name}")
+                log.info(f"File loaded with universal pymatgen parser: {path.name}")
         except Exception as e:
             log.warning(f"ERROR reading file {structure_file_path}: {e}")
-            return
+            return None
 
     elif args_parse.mp_query:
         mp_id_or_comp = args_parse.mp_query
@@ -322,6 +254,7 @@ def main(args=None):
 
         log.info(f"Try to read initial structure from Materials Project with ID/composition "
                  f"{mp_id_or_comp} and api_key {api_key}")
+
         try:
             with MPRester(api_key) as mpr:
                 # Prioritize fetching the conventional cell for polaron supercell generation
@@ -350,18 +283,86 @@ def main(args=None):
 
     log.info(f"Successfully loaded structure: {structure.formula} ({len(structure)} sites)")
 
-    # 2. Get Polaron Type (Interactive)
-    polaron_type = args_parse.polaron_type.lower()
-    if polaron_type not in ["electron", "hole"]:
-        log.warning(f"Invalid polaron type choice: {polaron_type}. Exiting.")
-        return
+    return structure
 
+def validate_dft_input(args_parse: argparse.Namespace) -> bool:
+    """Performs final checks on polaron/vacancy and functional choices."""
+    polaron_type = args_parse.polaron_type.lower()
     number_of_polarons = args_parse.polaron_number
     number_of_oxygen_vacancies = args_parse.oxygen_vacancy_number
 
+    if polaron_type not in ["electron", "hole"]:
+        log.warning(f"Invalid polaron type choice: {polaron_type}. Exiting.")
+        return False
+
     if number_of_polarons == 0 and number_of_oxygen_vacancies == 0:
         log.warning(f"No polarons or oxygen vacancies will be created. Exiting. ")
+        return False
+
+    if args_parse.xc_functional.lower() == 'pbeu' and polaron_type == 'hole':
+        log.warning("PBE+U not possible with hole polarons. Occupation matrix control works only for electron "
+                    "polarons. Please switch to hybrid functionals. Exiting ")
+        return False
+
+    return True
+
+def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftParameters:
+    """Maps parsed arguments to the DftParameters TypedDict structure."""
+
+    # NOTE: The keys must match the TypedDict definition (DftParameters)
+    dft_parameters: DftParameters = {
+        "dft_code": args_parse.dft_code,
+        "functional": args_parse.xc_functional,
+        "calc_type": args_parse.calc_type,
+        "supercell": args_parse.supercell_dims,
+        "aims_command": args_parse.aims_command,
+        "species_dir": args_parse.species_dir,
+        "run_dir_root": args_parse.run_dir_root,
+        "do_submit": args_parse.do_submit,
+        "set_site_magmoms": args_parse.set_site_magmoms,
+        "spin_moment": args_parse.spin_moment,
+        "run_pristine": args_parse.run_pristine,
+        "alpha": args_parse.alpha,
+        "hubbard_parameters": args_parse.hubbard_parameters,
+        "fix_spin_moment": args_parse.fix_spin_moment,
+        "disable_elsi_restart": args_parse.disable_elsi_restart,
+    }
+    return dft_parameters
+
+def display_candidates(candidates: List[Any], title: str):
+    """Prints the ranked list of candidates in a readable format."""
+    if not candidates:
+        log.info("No Plausible Candidates Found. Exiting.")
         return
+
+    for i, candidate in enumerate(candidates):
+        rank = i + 1
+        if title == "oxygen vacancy":
+
+            index, element, score = candidate
+            log.info(f"{[rank]} Oxygen vacancy at atomic site index {index} | Score: {score:.3f}")
+
+        elif title in ["electron", "hole"]:
+
+            index, element, oxidation_state, coordination_number, score = candidate
+            log.info(f"{[rank]} {title} polaron at atomic site index {index} | Element : {element}"
+                     f"  | Oxidation State: {oxidation_state} | "
+                     f"Coordination Number: {coordination_number} | Score: {score:.3f}")
+
+def process_and_generate_candidates(
+        structure: Structure,
+        polaron_type: str,
+        number_of_polarons: int,
+        number_of_oxygen_vacancies: int
+) -> Tuple[List, List, PolaronGenerator]:
+    """
+    Initializes the generator, finds polaron and vacancy candidates,
+    and handles the logic for vacancy-induced electron polarons.
+    Logs all results.
+
+    Returns:
+        (polaron_candidates, oxygen_vacancies_candidates, polaron_generator_instance)
+    """
 
     if number_of_oxygen_vacancies > 0:
         log.info(f"{number_of_oxygen_vacancies} oxygen vacancy(ies) will be considered, that"
@@ -373,25 +374,8 @@ def main(args=None):
     elif polaron_type == 'hole':
         log.info(f"The calculations will run with {number_of_polarons} additional {polaron_type} polaron(s).")
 
-    if args_parse.xc_functional.lower() == 'pbeu' and polaron_type == 'hole':
-        log.warning("PBE+U not possible with hole polarons. Occupation matrix control works only for electron"
-                    "polarons. Please switch to hybrid functionals. Exiting ")
-        return
-
-    # 3. Initialize Generator and Run Analysis
     polaron_generator = PolaronGenerator(structure, polaron_type=polaron_type)
-    polaron_generator.assign_oxidation_states()  # Ensure oxidation states are set once
-
-    dft_parameters = {
-        "dft_code": args_parse.dft_code, "functional": args_parse.xc_functional,
-        "calc_type": args_parse.calc_type, "supercell": args_parse.supercell_dims,
-        "aims_command": args_parse.aims_command, "species_dir": args_parse.species_dir,
-        "run_dir_root": args_parse.run_dir_root, "do_submit": args_parse.do_submit,
-        "set_site_magmoms": args_parse.set_site_magmoms, "spin_moment": args_parse.spin_moment,
-        "run_pristine": args_parse.run_pristine, "alpha": args_parse.alpha_exchange,
-        "hubbard_parameters": args_parse.hubbard_parameters, "fix_spin_moment": args_parse.fix_spin_moment,
-        "disable_elsi_restart": args_parse.disable_elsi_restart,
-    }
+    polaron_generator.assign_oxidation_states()
 
     polaron_candidates = []
     new_polaron_candidates = []
@@ -428,19 +412,42 @@ def main(args=None):
             display_candidates(new_polaron_candidates,'electron')
 
     polaron_candidates.extend(new_polaron_candidates)
-
     log.info("Analysis of possible polaron and oxygen vacancies completed. Ready for DFT Input Generation")
 
-    run_polaron_workflow(
-        polaron_generator=polaron_generator,
-        polaron_candidates=polaron_candidates,
-        oxygen_vacancy_candidates=oxygen_vacancies_candidates,
-        dft_params=dft_parameters
+    return polaron_candidates, oxygen_vacancies_candidates, polaron_generator
+
+def run_polaron_workflow(
+        polaron_generator: PolaronGenerator,
+        polaron_candidates: List[Tuple[int, str, Optional[float], float, float]],
+        oxygen_vacancy_candidates: List[Tuple[int, str, float]],
+        dft_params: DftParameters
+):
+    """
+    Asks the user to select a candidate index to calculate and triggers file generation.
+    """
+    log.info("DFT calculation setup initialization and job submission:")
+    log.info(
+        f"DFT Code: {dft_params['dft_code'].upper()} | Functional: {dft_params['functional']} "
+        f" | Calculation Type: {dft_params['calc_type']}")
+
+    # Format: (index, element, oxidation_state, coordination_number, score)
+    chosen_polaron_sites = [value[0] for value in polaron_candidates]
+    chosen_oxygen_vacancy_sites = [value[0] for value in oxygen_vacancy_candidates]
+
+    # Initialize Workflow
+    workflow = PolaronWorkflow(aims_executable_command=dft_params["aims_command"])
+
+    dft_parameters_for_workflow = {
+        key: value
+        for key, value in dft_params.items()
+        if key not in ["aims_command"]
+    }
+    settings = DftSettings(**dft_parameters_for_workflow)
+
+    # Run the generation
+    workflow.run_polaron_workflow(
+        generator=polaron_generator,
+        chosen_site_indices=chosen_polaron_sites,
+        chosen_vacancy_site_indices=chosen_oxygen_vacancy_sites,
+        settings=settings,
     )
-
-    log.info(f"Input files written to folder {dft_parameters['run_dir_root']}")
-    if args_parse.do_submit:
-        log.info("Jobs submitted to cluster")
-
-if __name__ == "__main__":
-    main(sys.argv[1:])

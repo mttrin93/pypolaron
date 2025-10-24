@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, TypedDict
 import numpy as np
 from pymatgen.core import Structure
 from pathlib import Path
@@ -127,3 +127,19 @@ class DftSettings:
     dielectric_eps: float = 10.0
     auto_analyze: bool = True
 
+class DftParameters(TypedDict):
+    dft_code: str
+    functional: str
+    calc_type: str
+    supercell: Tuple[int, int, int]
+    aims_command: str
+    species_dir: Optional[str]
+    run_dir_root: str
+    do_submit: bool
+    set_site_magmoms: bool
+    spin_moment: float
+    run_pristine: bool
+    alpha: float
+    hubbard_parameters: Optional[str]
+    fix_spin_moment: Optional[float]
+    disable_elsi_restart: bool

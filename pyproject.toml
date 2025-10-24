@@ -37,7 +37,8 @@ where = ["src"]
 include = ["pypolaron", "pypolaron.*"]
 
 [project.scripts]
-run_generator = "pypolaron.bin.run_polaron_generator:main"
+run_generator = "pypolaron.bin.run_generator:main"
+run_attractor = "pypolaron.bin.run_attractor:main"
 
 [project.optional-dependencies]
 dev = [

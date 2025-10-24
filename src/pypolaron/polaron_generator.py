@@ -17,6 +17,7 @@ from collections import Counter
 import numpy as np
 import shutil
 import os
+import copy
 from pathlib import Path
 import warnings
 
@@ -573,3 +574,7 @@ class PolaronGenerator:
 
             occupation_matrix_file = outdir / "occupation_matrix_control.txt"
             occupation_matrix_file.write_text(occupation_matrix_content)
+
+    def copy(self):
+        """Return a fully independent deep copy."""
+        return copy.deepcopy(self)

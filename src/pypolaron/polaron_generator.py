@@ -5,7 +5,7 @@ from pymatgen.analysis.bond_valence import BVAnalyzer
 from pymatgen.analysis.local_env import CrystalNN
 from pymatgen.core.periodic_table import Element
 
-from pypolaron.utils import parse_aims_plus_u_params
+from pypolaron.utils import parse_aims_plus_u_params, DftSettings
 # from pyfhiaims import AimsControlIn, AimsGeometryIn
 from pyfhiaims.geometry import AimsGeometry
 from pyfhiaims.control import AimsControl
@@ -290,12 +290,7 @@ class PolaronGenerator:
         self,
         site_index: Union[int, List[int]],
         vacancy_site_index: Union[int, List[int]],
-        supercell: Tuple[int, int, int] = (2, 2, 2),
-        spin_moment: float = 1.0,
-        set_site_magmoms: bool = True,
-        calc_type: str = 'relax-atoms',
-        functional: str = 'hse06',
-        potcar_dir: str = "./",
+        settings: DftSettings,
         outdir: str = "polaron_vasp_calc",
         is_charged_polaron_run: bool = True,
     ):
@@ -319,7 +314,7 @@ class PolaronGenerator:
         os.makedirs(outdir, exist_ok=True)
 
         # build supercell
-        scell = self.structure * supercell
+        scell = self.structure * settings.supercell
 
         if isinstance(site_index, int):
             site_index = [site_index]
@@ -339,9 +334,9 @@ class PolaronGenerator:
 
         # TODO: add possibility to assign initial magnetic moment even though the calculation is for pristine
         # assign initial magmom
-        if set_site_magmoms and is_charged_polaron_run:
+        if settings.set_site_magmoms and is_charged_polaron_run:
             site_index_supercell, magmoms = self._create_magmoms(
-                scell, site_index, spin_moment
+                scell, site_index, settings.spin_moment
             )
             scell.add_site_property("magmom", magmoms)
         # else:
@@ -359,7 +354,7 @@ class PolaronGenerator:
         }
 
         # add calculation type settings
-        calc_type_lower = calc_type.lower()
+        calc_type_lower = settings.calc_type.lower()
         if calc_type_lower == 'scf':
             user_incar["NSW"] = 0
             user_incar["IBRION"] = -1
@@ -371,7 +366,7 @@ class PolaronGenerator:
                 user_incar["ISIF"] = 3
 
         # add functional-specific settings
-        if functional.lower() == "hse06":
+        if settings.functional.lower() == "hse06":
             user_incar.update({
                 "LHFCALC": True,  # Enable hybrid functional
                 "HFSCREEN": 0.2,  # Screening parameter for HSE06
@@ -379,7 +374,7 @@ class PolaronGenerator:
                 "ALGO": "All",  # Recommended for hybrids
             })
             user_incar["LDAU"] = False # turn off DFT+U with HSE
-        elif functional.lower() == "pbeu":
+        elif settings.functional.lower() == "pbeu":
             user_incar.update({
                 "LDAU": True,
                 "LDAUTYPE": 2,  # Common DFT+U setting
@@ -398,13 +393,13 @@ class PolaronGenerator:
         original_psp_dir = os.environ.get("VASP_PSP_DIR")
 
         try:
-            if potcar_dir:
-                os.environ["VASP_PSP_DIR"] = potcar_dir
+            if settings.species_dir:
+                os.environ["VASP_PSP_DIR"] = settings.species_dir
             vis.write_input(outdir, potcar_spec=True)
         finally:
             if original_psp_dir is not None:
                 os.environ["VASP_PSP_DIR"] = original_psp_dir
-            elif potcar_dir:
+            elif settings.species_dir:
                 del os.environ["VASP_PSP_DIR"]
 
     def _generate_occupation_matrix_content(
@@ -452,16 +447,7 @@ class PolaronGenerator:
         self,
         site_index: Union[int, List[int]],
         vacancy_site_index: Union[int, List[int]],
-        supercell: Tuple[int, int, int] = (2, 2, 2),
-        spin_moment: float = 1.0,
-        set_site_magmoms: bool = True,
-        calc_type: str = "relax-atoms",
-        functional: str = "hse06",
-        hubbard_parameters: str = None,
-        alpha: float = 0.25,
-        fix_spin_moment: float = None,
-        disable_elsi_restart: bool = False,
-        species_dir: str = "./",
+        settings: DftSettings,
         outdir: str = "./fhi_aims_files",
         is_charged_polaron_run: bool = True,
     ):
@@ -487,7 +473,7 @@ class PolaronGenerator:
         outdir.mkdir(parents=True, exist_ok=True)
 
         # build supercell
-        scell = self.structure * supercell
+        scell = self.structure * settings.supercell
 
         if isinstance(site_index, int):
             site_index = [site_index]
@@ -509,9 +495,9 @@ class PolaronGenerator:
         # assign initial magmom
         if is_charged_polaron_run:
             site_index_supercell, magmoms = self._create_magmoms(
-                scell, site_index, spin_moment
+                scell, site_index, settings.spin_moment
             )
-            if set_site_magmoms:
+            if settings.set_site_magmoms:
                 scell.add_site_property("magmom", magmoms)
 
         scell.remove_oxidation_states()
@@ -533,50 +519,50 @@ class PolaronGenerator:
             "charge_mix_param": 0.3,
             "mixer": "pulay",
             "charge": total_charge,
-            "species_dir": species_dir,
-            "compute_forces": ".true." if calc_type.lower() in ["relax-atoms", "relax-all"] else ".false."
+            "species_dir": settings.species_dir,
+            "compute_forces": ".true." if settings.calc_type.lower() in ["relax-atoms", "relax-all"] else ".false."
         }
 
-        if fix_spin_moment is not None:
-            params["fix_spin_moment"] = fix_spin_moment
+        if settings.fix_spin_moment is not None:
+            params["fix_spin_moment"] = settings.fix_spin_moment
 
-        if not disable_elsi_restart:
+        if not settings.disable_elsi_restart:
             params.update({
                 "elsi_restart": "read_and_write 100",
                 "elsi_restart_use_overlap": ".true.",
             })
 
-        is_pbeu_run = functional.lower() == "pbeu"
+        is_pbeu_run = settings.functional.lower() == "pbeu"
         # Add functional-specific settings
-        if functional.lower() == "hse06":
+        if settings.functional.lower() == "hse06":
             params.update({
                  "xc": "hse06 0.11",
                  "hse_unit": "bohr-1",
-                 "hybrid_xc_coeff": {alpha},
+                 "hybrid_xc_coeff": {settings.alpha},
             })
-        elif functional.lower() == "pbe0":
+        elif settings.functional.lower() == "pbe0":
             params.update({
                  "xc": "pbe0",
-                 "hybrid_xc_coeff": {alpha},
+                 "hybrid_xc_coeff": {settings.alpha},
             })
         elif is_pbeu_run:
-            plus_u_values = parse_aims_plus_u_params(hubbard_parameters)
+            plus_u_values = parse_aims_plus_u_params(settings.hubbard_parameters)
             params.update({
                  "xc": "pbe",
                  "plus_u_petukhov_mixing": "1.0",
                  "plus_u_matrix_control": ".true.",
                  "plus_u": plus_u_values,
             })
-        elif functional.lower() == "pbe":
+        elif settings.functional.lower() == "pbe":
             params["xc"] = "pbe"
         else:
-            raise ValueError(f"Unsupported functional '{functional}'. "
+            raise ValueError(f"Unsupported functional '{settings.functional}'. "
                              f" Supported options are: 'hse06', 'pbe', or 'pbeu'.")
 
         # Add relaxation settings
-        if calc_type.lower() in ["relax-atoms", "relax-all"]:
+        if settings.calc_type.lower() in ["relax-atoms", "relax-all"]:
             params["relax_geometry"] = "trm 1e-4"
-            if calc_type.lower() == "relax-all":
+            if settings.calc_type.lower() == "relax-all":
                 params["relax_unit_cell"] = "full"
 
         control = AimsControl(params)

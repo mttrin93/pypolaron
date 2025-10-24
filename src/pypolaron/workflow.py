@@ -105,39 +105,27 @@ class PolaronWorkflow:
 
         script_pr = None
 
-        common_args = {
-            "site_index": chosen_site_indices,
-            "vacancy_site_index": chosen_vacancy_site_indices,
-            "supercell": settings.supercell,
-            "spin_moment": settings.spin_moment,
-            "set_site_magmoms": settings.set_site_magmoms,
-            "calc_type": settings.calc_type,
-            "functional": settings.functional,
-            "alpha": settings.alpha,
-            "hubbard_parameters": settings.hubbard_parameters,
-            "fix_spin_moment": settings.fix_spin_moment,
-            "disable_elsi_restart": settings.disable_elsi_restart,
-        }
-
         if settings.dft_code == "aims":
             write_func = generator.write_fhi_aims_input_files
-            common_args['species_dir'] = settings.species_dir
         elif settings.dft_code == "vasp":
             write_func = generator.write_vasp_input_files
-            common_args['potcar_dir'] = settings.species_dir
         else:
             raise ValueError(f"Unknown DFT tool: {settings.dft_code}. Must be 'aims' or 'vasp'.")
 
         if settings.run_pristine:
             write_func(
-                **common_args,
+                site_index=chosen_site_indices,
+                vacancy_site_index=chosen_vacancy_site_indices,
+                settings=settings,
                 outdir=str(pristine_dir),
                 is_charged_polaron_run=False,
             )
             script_pr = self.write_simple_job_script(pristine_dir)
 
         write_func(
-            **common_args,
+            site_index=chosen_site_indices,
+            vacancy_site_index=chosen_vacancy_site_indices,
+            settings=settings,
             outdir=str(charged_dir),
             is_charged_polaron_run=True,
         )

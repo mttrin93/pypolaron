@@ -11,7 +11,7 @@ from pymatgen.core.structure import Structure
 from pymatgen.ext.matproj import MPRester
 from pypolaron import __version__
 from pyfhiaims.geometry import AimsGeometry
-from pypolaron.utils import DftSettings, DftParameters # Assuming DftParameters is TypedDict for the raw args
+from pypolaron.utils import DftSettings
 from pypolaron.workflow import PolaronWorkflow
 from pypolaron.polaron_generator import PolaronGenerator
 
@@ -306,11 +306,11 @@ def validate_dft_input(args_parse: argparse.Namespace) -> bool:
 
     return True
 
-def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftParameters:
+def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftSettings:
     """Maps parsed arguments to the DftParameters TypedDict structure."""
 
     # NOTE: The keys must match the TypedDict definition (DftParameters)
-    dft_parameters: DftParameters = {
+    dft_parameters = {
         "dft_code": args_parse.dft_code,
         "functional": args_parse.xc_functional,
         "calc_type": args_parse.calc_type,
@@ -326,8 +326,9 @@ def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftParameters:
         "hubbard_parameters": args_parse.hubbard_parameters,
         "fix_spin_moment": args_parse.fix_spin_moment,
         "disable_elsi_restart": args_parse.disable_elsi_restart,
+        # "attractor_elements": args_parse.attractor_elements,
     }
-    return dft_parameters
+    return DftSettings(**dft_parameters)
 
 def display_candidates(candidates: List[Any], title: str):
     """Prints the ranked list of candidates in a readable format."""
@@ -420,34 +421,56 @@ def run_polaron_workflow(
         polaron_generator: PolaronGenerator,
         polaron_candidates: List[Tuple[int, str, Optional[float], float, float]],
         oxygen_vacancy_candidates: List[Tuple[int, str, float]],
-        dft_params: DftParameters
+        dft_params: DftSettings
 ):
     """
     Asks the user to select a candidate index to calculate and triggers file generation.
     """
     log.info("DFT calculation setup initialization and job submission:")
     log.info(
-        f"DFT Code: {dft_params['dft_code'].upper()} | Functional: {dft_params['functional']} "
-        f" | Calculation Type: {dft_params['calc_type']}")
+        f"DFT Code: {dft_params.dft_code.upper()} | Functional: {dft_params.functional} "
+        f" | Calculation Type: {dft_params.calc_type}")
 
     # Format: (index, element, oxidation_state, coordination_number, score)
     chosen_polaron_sites = [value[0] for value in polaron_candidates]
     chosen_oxygen_vacancy_sites = [value[0] for value in oxygen_vacancy_candidates]
 
     # Initialize Workflow
-    workflow = PolaronWorkflow(aims_executable_command=dft_params["aims_command"])
-
-    dft_parameters_for_workflow = {
-        key: value
-        for key, value in dft_params.items()
-        if key not in ["aims_command"]
-    }
-    settings = DftSettings(**dft_parameters_for_workflow)
+    workflow = PolaronWorkflow(aims_executable_command=dft_params.aims_command)
 
     # Run the generation
     workflow.run_polaron_workflow(
         generator=polaron_generator,
         chosen_site_indices=chosen_polaron_sites,
         chosen_vacancy_site_indices=chosen_oxygen_vacancy_sites,
-        settings=settings,
+        settings=dft_params,
+    )
+
+def run_attractor_workflow(
+        polaron_generator: PolaronGenerator,
+        polaron_candidates: List[Tuple[int, str, Optional[float], float, float]],
+        oxygen_vacancy_candidates: List[Tuple[int, str, float]],
+        dft_params: DftSettings
+):
+    """
+    Asks the user to select a candidate index to calculate and triggers file generation.
+    """
+    log.info("DFT calculation setup initialization and job submission:")
+    log.info(
+        f"DFT Code: {dft_params.dft_code.upper()} | Functional: {dft_params.functional} "
+        f" | Calculation Type: {dft_params.calc_type}")
+
+    # Format: (index, element, oxidation_state, coordination_number, score)
+    chosen_polaron_sites = [value[0] for value in polaron_candidates]
+    chosen_oxygen_vacancy_sites = [value[0] for value in oxygen_vacancy_candidates]
+
+    # Initialize Workflow
+    workflow = PolaronWorkflow(aims_executable_command=dft_params.aims_command)
+
+    # Run the generation
+    workflow.run_attractor_workflow(
+        generator=polaron_generator,
+        chosen_site_indices=chosen_polaron_sites,
+        chosen_vacancy_site_indices=chosen_oxygen_vacancy_sites,
+        settings=dft_params,
     )

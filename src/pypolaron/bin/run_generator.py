@@ -45,7 +45,7 @@ def main(args=None):
         dft_params=dft_parameters
     )
 
-    log.info(f"Input files written to folder {dft_parameters['run_dir_root']}")
+    log.info(f"Input files written to folder {dft_parameters.run_dir_root}")
     if args_parse.do_submit:
         log.info("Jobs submitted to cluster")
 

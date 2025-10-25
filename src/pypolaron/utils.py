@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from typing import List, Dict, Tuple, Optional, TypedDict
+from typing import List, Dict, Tuple, Optional, TypedDict, Union
 import numpy as np
 from pymatgen.core import Structure
 from pathlib import Path
@@ -127,19 +127,78 @@ class DftSettings:
     dielectric_eps: float = 10.0
     auto_analyze: bool = True
 
-class DftParameters(TypedDict):
-    dft_code: str
-    functional: str
-    calc_type: str
-    supercell: Tuple[int, int, int]
-    aims_command: str
-    species_dir: Optional[str]
-    run_dir_root: str
-    do_submit: bool
-    set_site_magmoms: bool
-    spin_moment: float
-    run_pristine: bool
-    alpha: float
-    hubbard_parameters: Optional[str]
-    fix_spin_moment: Optional[float]
-    disable_elsi_restart: bool
+    attractor_elements: str = None
+    aims_command: str = None
+
+def generate_occupation_matrix_content(
+        scell: Structure, polaron_indices: List[int]
+) -> str:
+    """
+    Generates the content for FHI-aims' occupation_matrix_control.txt file.
+
+    We assume 5x5 matrices (d-orbitals) for the U term, and that the polaron
+    is seeded by putting 1.0 in the first spin-up diagonal element.
+    """
+    matrix_size = 5  # Typical for d-orbitals (5x5 matrix)
+    content = []
+    empty_matrix = '\n'.join([' '.join(['0.00000'] * matrix_size)] * matrix_size)
+
+    for i, site in enumerate(scell.sites):
+
+        is_polaron_site = i in polaron_indices
+        atom_index_in_aims = i + 1
+
+        for spin in [1, 2]:
+            header = (
+                f"occupation matrix (subspace #           {atom_index_in_aims} , spin           {spin} )"
+            )
+            content.append(header)
+
+            matrix_lines = []
+
+            if is_polaron_site and spin == 1:  # Spin 1 = Spin Up (Seeding the polaron)
+                # Seed the polaron by placing 1.0 in the first diagonal element
+                seeded_matrix = [['0.00000'] * matrix_size for _ in range(matrix_size)]
+                seeded_matrix[0][0] = '1.00000'
+
+                for row in seeded_matrix:
+                    matrix_lines.append(' '.join(row))
+
+            else:  # Spin 2 (Spin Down) or Non-polaron site
+                matrix_lines.append(empty_matrix)
+
+            content.extend(matrix_lines)
+
+    return '\n'.join(content)
+
+def create_attractor_structure(
+        scell: Structure,
+        target_site_index: Union[int, List[int]],
+        attractor_elements: Union[str, List[str]]
+) -> Structure:
+    """
+    Creates the intermediate structure for the electron attractor method.
+    Substitutes the original atom (M^n+) at the target polaron site with a
+    specific attractor element (e.g., V^5+ -> Cr^3+).
+    """
+    if isinstance(target_site_index, int):
+        target_site_index = [target_site_index]
+
+    if isinstance(attractor_elements, str):
+        elements_list = [e.strip().capitalize() for e in attractor_elements.split(',') if e.strip()]
+    else:
+        elements_list = [e.strip().capitalize() for e in attractor_elements]
+
+    if len(elements_list) == 1 and len(target_site_index) > 1:
+        elements_list = elements_list * len(target_site_index)
+
+    if len(elements_list) != len(target_site_index):
+        raise ValueError("The number of attractor elements must match the number of target sites.")
+
+    attractor_structure = scell.copy()
+    for target_site, element_symbol in zip(target_site_index, elements_list):
+        attractor_structure.replace(target_site, element_symbol)
+
+    return attractor_structure
+
+

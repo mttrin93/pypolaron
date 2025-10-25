@@ -208,38 +208,11 @@ class PolaronWorkflow:
 
         return report
 
-    def _create_attractor_structure(
-            self,
-            generator: PolaronGenerator,
-            target_site_index: Union[int, List[int]],
-            attractor_elements: Union[str, List[str]]
-    ) -> Structure:
-        """
-        Creates the intermediate structure for the electron attractor method.
-        Substitutes the original atom (M^n+) at the target polaron site with a
-        specific attractor element (e.g., V^5+ -> Cr^3+).
-        """
-        if isinstance(target_site_index, int):
-            target_site_index = [target_site_index]
-
-        if len(attractor_elements) == 1:
-            attractor_elements = [attractor_elements] * len(target_site_index)
-
-        if not generator.oxidation_assigned:
-            generator.assign_oxidation_states()
-
-        attractor_structure = generator.structure.copy()
-        for target_site, element in zip(target_site_index, attractor_elements):
-            attractor_structure.replace(target_site, element)
-
-        return attractor_structure
-
     def run_attractor_workflow(
             self,
             generator: PolaronGenerator,
             chosen_site_indices: Union[int, List[int]],
             chosen_vacancy_site_indices: Union[int, List[int]],
-            attractor_elements: Union[str, List[str]],
             settings: DftSettings,
     ) -> Dict[str, Union[str, float, Dict[str, Any]]]:
         """
@@ -263,12 +236,8 @@ class PolaronWorkflow:
         # --- JOB 1: ATTRACTOR RELAXATION (M^0 Substitution) ---
         attractor_dir = root / "01_Attractor_Run"
 
-        attractor_generator = generator.copy()
-        attractor_generator.structure = self._create_attractor_structure(generator,
-                                                                         chosen_site_indices,
-                                                                         attractor_elements)
         write_func(
-            site_index=[],
+            site_index=chosen_site_indices,
             vacancy_site_index=chosen_vacancy_site_indices,
             settings=settings,
             outdir=str(attractor_dir),
@@ -276,6 +245,7 @@ class PolaronWorkflow:
         )
         script_attractor = self.write_simple_job_script(attractor_dir)
 
+        # TODO: start debug from here
         # --- JOB 2: FINAL POLARON RUN (Original M^n+ with Spin Seed) ---
         polaron_dir = root / "02_Final_Polaron_Run"
 

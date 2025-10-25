@@ -5,7 +5,8 @@ from pymatgen.analysis.bond_valence import BVAnalyzer
 from pymatgen.analysis.local_env import CrystalNN
 from pymatgen.core.periodic_table import Element
 
-from pypolaron.utils import parse_aims_plus_u_params, DftSettings
+from pypolaron.utils import parse_aims_plus_u_params, DftSettings, \
+    generate_occupation_matrix_content, create_attractor_structure
 # from pyfhiaims import AimsControlIn, AimsGeometryIn
 from pyfhiaims.geometry import AimsGeometry
 from pyfhiaims.control import AimsControl
@@ -403,47 +404,6 @@ class PolaronGenerator:
             elif settings.species_dir:
                 del os.environ["VASP_PSP_DIR"]
 
-    def _generate_occupation_matrix_content(
-            self, scell: Structure, polaron_indices: List[int]
-    ) -> str:
-        """
-        Generates the content for FHI-aims' occupation_matrix_control.txt file.
-
-        We assume 5x5 matrices (d-orbitals) for the U term, and that the polaron
-        is seeded by putting 1.0 in the first spin-up diagonal element.
-        """
-        matrix_size = 5  # Typical for d-orbitals (5x5 matrix)
-        content = []
-        empty_matrix = '\n'.join([' '.join(['0.00000'] * matrix_size)] * matrix_size)
-
-        for i, site in enumerate(scell.sites):
-
-            is_polaron_site = i in polaron_indices
-            atom_index_in_aims = i + 1
-
-            for spin in [1, 2]:
-                header = (
-                    f"occupation matrix (subspace #           {atom_index_in_aims} , spin           {spin} )"
-                )
-                content.append(header)
-
-                matrix_lines = []
-
-                if is_polaron_site and spin == 1:  # Spin 1 = Spin Up (Seeding the polaron)
-                    # Seed the polaron by placing 1.0 in the first diagonal element
-                    seeded_matrix = [['0.00000'] * matrix_size for _ in range(matrix_size)]
-                    seeded_matrix[0][0] = '1.00000'
-
-                    for row in seeded_matrix:
-                        matrix_lines.append(' '.join(row))
-
-                else:  # Spin 2 (Spin Down) or Non-polaron site
-                    matrix_lines.append(empty_matrix)
-
-                content.extend(matrix_lines)
-
-        return '\n'.join(content)
-
     def write_fhi_aims_input_files(
         self,
         site_index: Union[int, List[int]],
@@ -500,6 +460,17 @@ class PolaronGenerator:
             )
             if settings.set_site_magmoms:
                 scell.add_site_property("magmom", magmoms)
+        elif settings.attractor_elements is not None:
+            site_index_supercell, _ = self._create_magmoms(
+                scell, site_index, settings.spin_moment
+            )
+
+        if settings.attractor_elements:
+            scell = create_attractor_structure(
+                scell,
+                site_index_supercell,
+                settings.attractor_elements
+            )
 
         scell.remove_oxidation_states()
         # Build geometry.in via pymatgen helper
@@ -570,11 +541,7 @@ class PolaronGenerator:
         control.write_file(geom, outdir)
 
         if is_pbeu_run and is_charged_polaron_run:
-            occupation_matrix_content = self._generate_occupation_matrix_content(scell, site_index_supercell)
+            occupation_matrix_content = generate_occupation_matrix_content(scell, site_index_supercell)
 
             occupation_matrix_file = outdir / "occupation_matrix_control.txt"
             occupation_matrix_file.write_text(occupation_matrix_content)
-
-    def copy(self):
-        """Return a fully independent deep copy."""
-        return copy.deepcopy(self)

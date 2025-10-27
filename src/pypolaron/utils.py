@@ -1,9 +1,23 @@
 import matplotlib.pyplot as plt
 from typing import List, Dict, Tuple, Optional, TypedDict, Union
 import numpy as np
+import socket
+import getpass
+import logging
+import re
+import time
+import subprocess
 from pymatgen.core import Structure
 from pathlib import Path
 from dataclasses import dataclass, field
+
+# --- Global Setup ---
+hostname = socket.gethostname()
+username = getpass.getuser()
+
+LOG_FMT = '%(asctime)s %(levelname).1s - %(message)s'.format(hostname)
+logging.basicConfig(level=logging.INFO, format=LOG_FMT, datefmt="%Y/%m/%d %H:%M:%S")
+log = logging.getLogger('pypolaron')
 
 
 def plot_site_occupations(
@@ -200,5 +214,99 @@ def create_attractor_structure(
         attractor_structure.replace(target_site, element_symbol)
 
     return attractor_structure
+
+def run_job_and_wait(script_path: Path, scheduler: Optional[str] = None):
+    """
+    Executes a job submission script and waits synchronously for its completion.
+
+    Args:
+        script_path (Path): Path to the executable job script (e.g., run_aims.sh).
+        scheduler (Optional[str]): The scheduler type ('slurm' or None).
+
+    Raises:
+        RuntimeError: If the job submission or execution fails.
+    """
+    if scheduler and scheduler.lower() == 'slurm':
+        # --- 1. SLURM Submission and Polling ---
+
+        # 1a. Submit the job using sbatch
+        log.info(f"Submitting SLURM job: {script_path}")
+        try:
+            submission_result = subprocess.run(
+                ['sbatch', str(script_path)],
+                capture_output=True,
+                text=True,
+                check=True  # Raise exception on non-zero exit code for submission
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"SLURM submission failed for {script_path.parent.name}: {e.stderr}")
+
+        # Expected sbatch output format: "Submitted batch job 1234567"
+        match = re.search(r'Submitted batch job (\d+)', submission_result.stdout)
+        if not match:
+            raise RuntimeError(f"Could not extract Job ID from sbatch output: {submission_result.stdout}")
+
+        job_id = match.group(1)
+        log.info(f"SLURM Job ID: {job_id}. Polling status...")
+
+        # 1b. Poll status until job finishes (sacct is generally more reliable than squeue)
+        while True:
+            # Check the job state using sacct
+            try:
+                # Use --noheader and -P for cleaner parsing
+                status_result = subprocess.run(
+                    ['sacct', '-j', job_id, '--format=State', '-P', '--noheader'],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+            except subprocess.CalledProcessError as e:
+                # sacct sometimes fails temporarily; log and continue polling
+                log.warning(f"sacct command failed: {e.stderr}. Retrying in 10s.")
+                time.sleep(10)
+                continue
+
+            # The output should contain the state (e.g., RUNNING, PENDING, COMPLETED, FAILED)
+            state = status_result.stdout.strip()
+
+            if not state:
+                # Job ID may have disappeared if sacct hasn't caught up, treat as pending for a moment
+                time.sleep(5)
+                continue
+
+            if state in ['RUNNING', 'PENDING', 'COMPLETING', 'CONFIGURING']:
+                log.info(f"Job {job_id} is currently {state}. Waiting 30s...")
+                time.sleep(30)  # Poll less frequently for clusters
+
+            elif state == 'COMPLETED':
+                log.info(f"SLURM Job {job_id} finished successfully.")
+                break
+
+            elif state in ['FAILED', 'CANCELLED', 'TIMEOUT', 'NODE_FAIL']:
+                raise RuntimeError(f"SLURM Job {job_id} failed with state: {state}")
+
+            else:
+                log.info(f"Job {job_id} in unexpected state: {state}. Waiting 30s.")
+                time.sleep(30)
+
+    else:
+        # --- 2. Local/Bash Execution ---
+
+        log.info(f"Executing local job: {script_path}")
+        try:
+            # Run the script directly using bash
+            # check=True will raise CalledProcessError if the script exits with non-zero status
+            subprocess.run(
+                ['bash', str(script_path)],
+                check=True,
+                cwd=script_path.parent,  # Set CWD to the job directory
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT
+            )
+            log.info(f"Local job finished successfully.")
+        except subprocess.CalledProcessError as e:
+            # Capture the output of the failed job for debugging
+            output_message = e.output.strip() if e.output else "No output captured."
+            raise RuntimeError(f"Local job failed for {script_path.parent.name}. Output: {output_message}")
 
 

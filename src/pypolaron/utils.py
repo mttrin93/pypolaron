@@ -8,6 +8,7 @@ import re
 import time
 import subprocess
 from pymatgen.core import Structure
+from pyfhiaims.geometry import AimsGeometry
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -309,4 +310,36 @@ def run_job_and_wait(script_path: Path, scheduler: Optional[str] = None):
             output_message = e.output.strip() if e.output else "No output captured."
             raise RuntimeError(f"Local job failed for {script_path.parent.name}. Output: {output_message}")
 
+def read_final_geometry(dft_code: str, job_directory: Path) -> Optional[Structure]:
+    """
+    Reads the final relaxed structure from a completed DFT job directory.
+    """
+    dft_code = dft_code.lower()
 
+    if dft_code == "aims":
+        # FHI-AIMS output for relaxed geometry is typically geometry.in.next_step
+        final_geom_path = job_directory / "geometry.in.next_step"
+        aims_output_file = job_directory / "aims.out"
+        match = re.search("Have a nice day.", aims_output_file)
+        if final_geom_path.exists() and match:
+            log.info(f"Reading AIMS geometry from {final_geom_path.name}")
+            try:
+                # Need to use the Aims-specific parser if the file isn't POSCAR-like
+                return AimsGeometry.from_file(final_geom_path).structure
+            except Exception as e:
+                log.error(f"Error parsing AIMS geometry: {e}")
+                return None
+    elif dft_code == "vasp":
+        # VASP output for relaxed geometry
+        final_geom_path = job_directory / "CONTCAR"
+        if final_geom_path.exists():
+            log.info(f"Reading VASP CONTCAR from {final_geom_path.name}")
+            try:
+                # Use standard pymatgen parser
+                return Structure.from_file(str(final_geom_path))
+            except Exception as e:
+                log.error(f"Error parsing VASP CONTCAR: {e}")
+                return None
+    else:
+        log.error(f"Final geometry file not found for {dft_code.upper()} in {job_directory.name}.")
+        return None

@@ -23,6 +23,7 @@ dependencies = [
     "pymatgen",
     "pymatgen-analysis-defects",
     "pydefect",
+    "pyfhiaims"
 ]
 dynamic = ["version"]
 

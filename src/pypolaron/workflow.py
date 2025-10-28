@@ -12,7 +12,7 @@ import getpass
 
 from pypolaron.polaron_generator import PolaronGenerator
 from pypolaron.polaron_analyzer import PolaronAnalyzer
-from pypolaron.utils import DftSettings, run_job_and_wait, read_final_geometry
+from pypolaron.utils import DftSettings, run_job_and_wait, read_final_geometry, is_job_completed
 
 
 # --- Global Setup ---
@@ -264,26 +264,32 @@ class PolaronWorkflow:
         else:
             raise ValueError(f"Unknown DFT tool: {settings.dft_code}")
 
+        planned = {}
+
         # --- JOB 1: ATTRACTOR RELAXATION (M^0 Substitution) ---
         attractor_dir = root / "01_Attractor_Run"
 
-        write_func(
-            site_index=chosen_site_indices,
-            vacancy_site_index=chosen_vacancy_site_indices,
-            settings=settings,
-            outdir=str(attractor_dir),
-            is_charged_polaron_run=False,
-        )
-        script_attractor = self.write_simple_job_script(attractor_dir)
+        # and settings.do_submit
 
-        planned = {
-            "attractor_dir": str(attractor_dir),
-            "attractor_script": script_attractor,
-            "instructions": "Run Job 1 first. Then run Job 2 and 3 sequentially using the geometry from Job 1."
-        }
+        if is_job_completed(settings.dft_code, attractor_dir):
 
-        relaxed_attractor_structure = None
-        if settings.do_submit:
+            write_func(
+                site_index=chosen_site_indices,
+                vacancy_site_index=chosen_vacancy_site_indices,
+                settings=settings,
+                outdir=str(attractor_dir),
+                is_charged_polaron_run=False,
+            )
+            script_attractor = self.write_simple_job_script(attractor_dir)
+
+            planned = {
+                "attractor_dir": str(attractor_dir),
+                "attractor_script": script_attractor,
+                "instructions": "Run Job 1 first. Then run Job 2 and 3 sequentially using the geometry from Job 1."
+            }
+
+            relaxed_attractor_structure = None
+            # if settings.do_submit:
             planned["submitted"] = True
             current_retries = 0
             job_status = "PENDING"
@@ -329,6 +335,7 @@ class PolaronWorkflow:
                 planned["status"] = f"Job 1 failed after {MAX_RETRIES} retries. Halting workflow."
                 return {"planned": planned}
 
+        else:
             relaxed_attractor_structure = read_final_geometry(settings.dft_code, attractor_dir)
             if relaxed_attractor_structure is None:
                 planned["status"] = "Could not read relaxed geometry for Job 1"
@@ -337,6 +344,7 @@ class PolaronWorkflow:
             # --- JOB 2: FINAL POLARON RUN (Original M^n+ with Spin Seed) ---
             # TODO: check if Job 1 is completed, if yes jump directly to Job 2
             # TODO: implement the same structure of Job 1 in Job 2
+            # TODO: there is still some bug in the implementation of the structure reading
 
             # Assuming we only substitute one element back for simplicity:
             original_species = generator.structure[chosen_site_indices[0]].specie

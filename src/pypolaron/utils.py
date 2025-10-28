@@ -353,3 +353,59 @@ def read_final_geometry(dft_code: str, job_directory: Path) -> Optional[Structur
     else:
         log.error(f"Final geometry file not found for {dft_code.upper()} in {job_directory.name}.")
         return None
+
+def is_job_completed(dft_code: str, job_directory: Path) -> bool:
+    """
+    Checks if a calculation run has already successfully completed based on the
+    presence of key output files and a successful termination string.
+
+    Args:
+        dft_code (str): The DFT code used ('aims' or 'vasp').
+        job_directory (Path): The directory where the calculation was run.
+
+    Returns:
+        bool: True if key output files are found AND the termination message is present.
+    """
+    dft_code = dft_code.lower()
+
+    # 1. Define required files and success message
+    if dft_code == 'aims':
+        required_files = ["geometry.in.next_step", "aims.out"]
+        log_file = job_directory / "aims.out"
+        success_string = "Have a nice day."
+
+    elif dft_code == 'vasp':
+        required_files = ["CONTCAR", "OUTCAR"]
+        log_file = job_directory / "OUTCAR"
+        # Common VASP success string (Final step converged)
+        success_string = "reached required accuracy"
+
+    else:
+        # If the code is unknown, we cannot reliably check completion
+        return False
+
+    # 2. Check for required file existence
+    for filename in required_files:
+        if not (job_directory / filename).exists():
+            return False
+
+    # 3. Check for successful termination string in the log file
+    if log_file.exists():
+        try:
+            with open(log_file, 'r', encoding='utf-8') as f:
+                # Read the entire file content
+                content = f.read()
+
+            # Check for the success string
+            if success_string in content:
+                return True
+            else:
+                # File exists, but termination message is missing (likely crashed or failed)
+                return False
+        except Exception as e:
+            # Handle potential file reading errors
+            print(f"Warning: Could not read log file {log_file.name} for content check: {e}")
+            return False
+
+    # Log file required but doesn't exist
+    return False

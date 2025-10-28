@@ -510,12 +510,12 @@ class PolaronGenerator:
             params.update({
                  "xc": "hse06 0.11",
                  "hse_unit": "bohr-1",
-                 "hybrid_xc_coeff": {settings.alpha},
+                 "hybrid_xc_coeff": settings.alpha,
             })
         elif settings.functional.lower() == "pbe0":
             params.update({
                  "xc": "pbe0",
-                 "hybrid_xc_coeff": {settings.alpha},
+                 "hybrid_xc_coeff": settings.alpha,
             })
         elif is_pbeu_run:
             plus_u_values = parse_aims_plus_u_params(settings.hubbard_parameters)

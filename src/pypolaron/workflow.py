@@ -50,7 +50,7 @@ class PolaronWorkflow:
         workdir: Path,
         ntasks: int = 72,
         walltime: str = "02:00:00",
-        scheduler: Optional[str] = None,
+        scheduler: str = "slurm",
     ) -> Path:
         """
         Write a simple shell script to run FHI-aims in 'workdir'.
@@ -81,6 +81,7 @@ class PolaronWorkflow:
                 export MKL_DYNAMIC=FALSE
                 export MKL_NUM_THREADS=1
                 \n
+                cd {workdir} 
                 export LD_LIBRARY_PATH=/mpcdf/soft/SLE_15/packages/x86_64/intel_parallel_studio/2020.2/compilers_and_libraries/linux/lib/intel64_lin:$LD_LIBRARY_PATH
                 \n
                 {self.aims_executable_command} > aims.out

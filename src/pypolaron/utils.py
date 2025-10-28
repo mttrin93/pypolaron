@@ -216,7 +216,8 @@ def create_attractor_structure(
 
     return attractor_structure
 
-def run_job_and_wait(script_path: Path, scheduler: Optional[str] = None):
+def run_job_and_wait(script_path: Path,
+                     scheduler: str = "slurm"):
     """
     Executes a job submission script and waits synchronously for its completion.
 
@@ -250,6 +251,8 @@ def run_job_and_wait(script_path: Path, scheduler: Optional[str] = None):
         job_id = match.group(1)
         log.info(f"SLURM Job ID: {job_id}. Polling status...")
 
+        last_state = None
+
         # 1b. Poll status until job finishes (sacct is generally more reliable than squeue)
         while True:
             # Check the job state using sacct
@@ -269,25 +272,27 @@ def run_job_and_wait(script_path: Path, scheduler: Optional[str] = None):
 
             # The output should contain the state (e.g., RUNNING, PENDING, COMPLETED, FAILED)
             state = status_result.stdout.strip()
-
             if not state:
-                # Job ID may have disappeared if sacct hasn't caught up, treat as pending for a moment
                 time.sleep(5)
                 continue
 
-            if state in ['RUNNING', 'PENDING', 'COMPLETING', 'CONFIGURING']:
-                log.info(f"Job {job_id} is currently {state}. Waiting 30s...")
-                time.sleep(30)  # Poll less frequently for clusters
+            first_line = next((line for line in state.splitlines() if line.strip()), "")
+            state_token = first_line.split()[0].rstrip('+').upper() if first_line else ""
 
-            elif state == 'COMPLETED':
+            if state_token != last_state:
+                log.info(f"Job {job_id} is currently {state_token}")
+
+            last_state = state_token
+
+            if state_token in ['RUNNING', 'PENDING', 'COMPLETING', 'CONFIGURING']:
+                time.sleep(30)
+            elif state_token == 'COMPLETED':
                 log.info(f"SLURM Job {job_id} finished successfully.")
                 break
-
-            elif state in ['FAILED', 'CANCELLED', 'TIMEOUT', 'NODE_FAIL']:
-                raise RuntimeError(f"SLURM Job {job_id} failed with state: {state}")
-
+            elif state_token in ['FAILED', 'CANCELLED', 'TIMEOUT', 'NODE_FAIL']:
+                raise RuntimeError(f"SLURM Job {job_id} failed with state: {state_token}")
             else:
-                log.info(f"Job {job_id} in unexpected state: {state}. Waiting 30s.")
+                log.info(f"Job {job_id} in unexpected state: {state_token}. Waiting 30s.")
                 time.sleep(30)
 
     else:
@@ -320,8 +325,8 @@ def read_final_geometry(dft_code: str, job_directory: Path) -> Optional[Structur
         # FHI-AIMS output for relaxed geometry is typically geometry.in.next_step
         final_geom_path = job_directory / "geometry.in.next_step"
         aims_output_file = job_directory / "aims.out"
-        match = re.search("Have a nice day.", aims_output_file)
-        if final_geom_path.exists() and match:
+        # match = re.search("Have a nice day.", aims_output_file)
+        if final_geom_path.exists(): #and match:
             log.info(f"Reading AIMS geometry from {final_geom_path.name}")
             try:
                 # Need to use the Aims-specific parser if the file isn't POSCAR-like

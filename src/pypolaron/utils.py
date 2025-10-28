@@ -392,16 +392,12 @@ def is_job_completed(dft_code: str, job_directory: Path) -> bool:
     # 3. Check for successful termination string in the log file
     if log_file.exists():
         try:
-            with open(log_file, 'r', encoding='utf-8') as f:
-                # Read the entire file content
-                content = f.read()
-
-            # Check for the success string
-            if success_string in content:
-                return True
-            else:
-                # File exists, but termination message is missing (likely crashed or failed)
-                return False
+            success = False
+            with open(log_file, 'r') as f:
+                for line in enumerate(f):
+                    if line.lstrip().startswith(success_string):
+                        success = True
+            return success
         except Exception as e:
             # Handle potential file reading errors
             print(f"Warning: Could not read log file {log_file.name} for content check: {e}")

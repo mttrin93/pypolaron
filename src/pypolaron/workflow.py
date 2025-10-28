@@ -335,6 +335,18 @@ class PolaronWorkflow:
                 return {"planned": planned}
 
             # --- JOB 2: FINAL POLARON RUN (Original M^n+ with Spin Seed) ---
+            # TODO: check if Job 1 is completed, if yes jump directly to Job 2
+            # TODO: implement the same structure of Job 1 in Job 2
+
+            # Assuming we only substitute one element back for simplicity:
+            original_species = generator.structure[chosen_site_indices[0]].specie
+            final_polaron_structure = relaxed_attractor_structure.copy()
+            for sc_index in chosen_site_indices:
+                final_polaron_structure.replace(sc_index, original_species)
+
+            log.info(
+                f"Substituted attractor element back to {original_species.symbol} at target site(s) for Job 2.")
+
             polaron_dir = root / "02_Final_Polaron_Run"
 
             write_func(
@@ -343,6 +355,7 @@ class PolaronWorkflow:
                 settings=settings,
                 outdir=str(polaron_dir),
                 is_charged_polaron_run=True,  # Charged/Magnetic calculation
+                base_structure=final_polaron_structure,
             )
             script_polaron = self.write_simple_job_script(polaron_dir)
 
@@ -350,6 +363,7 @@ class PolaronWorkflow:
             planned["polaron_script"] = script_polaron
 
             run_job_and_wait(script_polaron)
+
             #
             # script_pristine = None
             # pristine_dir = None
@@ -371,18 +385,5 @@ class PolaronWorkflow:
             #
             #     # 3a. Submit Job 3 and wait (Conceptual)
             #     run_job_and_wait(script_pristine)
-
-        #
-        # # --- ORCHESTRATION REPORT ---
-        #
-        # planned = {
-        #     "attractor_dir": str(attractor_dir),
-        #     "polaron_dir": str(polaron_dir),
-        #     "pristine_dir": str(pristine_dir) if pristine_dir else None,
-        #     "attractor_script": script_attractor,
-        #     "polaron_script": script_polaron,
-        #     "pristine_script": script_pristine,
-        #     "instructions": "Job 1 (Attractor) must run first. Job 2 (Polaron) must use Job 1's final geometry as input."
-        # }
 
         return {"planned": planned}

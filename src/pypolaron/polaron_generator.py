@@ -295,6 +295,7 @@ class PolaronGenerator:
         settings: DftSettings,
         outdir: str = "polaron_vasp_calc",
         is_charged_polaron_run: bool = True,
+        base_structure: Optional[Structure] = None,
     ):
         """
         Generate a supercell with a seeded polaron (localized spin on chosen site).
@@ -316,7 +317,10 @@ class PolaronGenerator:
         os.makedirs(outdir, exist_ok=True)
 
         # build supercell
-        scell = self.structure * settings.supercell
+        if base_structure is not None:
+            scell = base_structure.copy()
+        else:
+            scell = self.structure * settings.supercell
 
         if isinstance(site_index, int):
             site_index = [site_index]
@@ -411,6 +415,7 @@ class PolaronGenerator:
         settings: DftSettings,
         outdir: str = "./fhi_aims_files",
         is_charged_polaron_run: bool = True,
+        base_structure: Optional[Structure] = None,
     ):
         """
         Write a simple FHI-aims 'geometry.in' and 'control.in' that:
@@ -434,7 +439,10 @@ class PolaronGenerator:
         outdir.mkdir(parents=True, exist_ok=True)
 
         # build supercell
-        scell = self.structure * settings.supercell
+        if base_structure is not None:
+            scell = base_structure.copy()
+        else:
+            scell = self.structure * settings.supercell
 
         if isinstance(site_index, int):
             site_index = [site_index]

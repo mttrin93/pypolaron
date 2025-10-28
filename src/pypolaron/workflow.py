@@ -4,13 +4,24 @@ import textwrap
 import numpy as np
 import subprocess
 import json
+import shutil
 
-from pymatgen.core import Structure
-from pymatgen.core.periodic_table import Element
+import logging
+import socket
+import getpass
 
 from pypolaron.polaron_generator import PolaronGenerator
 from pypolaron.polaron_analyzer import PolaronAnalyzer
 from pypolaron.utils import DftSettings, run_job_and_wait, read_final_geometry
+
+
+# --- Global Setup ---
+hostname = socket.gethostname()
+username = getpass.getuser()
+
+LOG_FMT = '%(asctime)s %(levelname).1s - %(message)s'.format(hostname)
+logging.basicConfig(level=logging.INFO, format=LOG_FMT, datefmt="%Y/%m/%d %H:%M:%S")
+log = logging.getLogger('pypolaron')
 
 
 # TODO: When seeding multiple polarons, be careful about total charge and spin multiplicity:
@@ -237,13 +248,19 @@ class PolaronWorkflow:
         2. Polaron Run (original element substituted back), starting from Job 1 geometry
         3. Pristine Reference (original structure with no polaron, fully relaxed)
         """
+        MAX_RETRIES = 3
+
         root = Path(settings.run_dir_root)
         root.mkdir(parents=True, exist_ok=True)
 
         if settings.dft_code == "aims":
             write_func = generator.write_fhi_aims_input_files
+            geometry_filename = "geometry.in"
+            geometry_next_step_filename = "geometry.in.next_step"
         elif settings.dft_code == "vasp":
             write_func = generator.write_vasp_input_files
+            geometry_filename = "POSCAR"
+            geometry_next_step_filename = "CONTCAR"
         else:
             raise ValueError(f"Unknown DFT tool: {settings.dft_code}")
 
@@ -266,14 +283,50 @@ class PolaronWorkflow:
         }
 
         relaxed_attractor_structure = None
-
         if settings.do_submit:
             planned["submitted"] = True
+            current_retries = 0
+            job_status = "PENDING"
 
-            try:
-                run_job_and_wait(script_attractor)
-            except Exception as e:
-                planned["status"] = "Job 1 failed. Error: {e}"
+            # try:
+            #     state_token = run_job_and_wait(script_attractor)
+            # except Exception as e:
+            #     planned["status"] = f"Job 1 failed. Error: {e}"
+            #     return {"planned": planned}
+
+            while current_retries < MAX_RETRIES:
+                if current_retries > 0:
+                    log.info(f"Retrying Job 1 after TIMEOUT (Attempt {current_retries + 1}/{MAX_RETRIES}).")
+
+                try:
+                    job_status = run_job_and_wait(script_attractor)
+                except RuntimeError as e:
+                    planned["status"] = f"Job 1 failed on attempt {current_retries + 1}. Fatal error: {e}"
+                    return {"planned": planned}
+
+                if job_status == "COMPLETED":
+                    log.info(f"Job 1 completed successfully after {current_retries} retries.")
+                    break
+                elif job_status == "TIMEOUT":
+                    next_step_path = attractor_dir / geometry_next_step_filename
+                    geometry_path = attractor_dir / geometry_filename
+
+                    if next_step_path.exists():
+                        log.warning(
+                            f"TIMEOUT detected. Copying {geometry_next_step_filename} to "
+                            f" {geometry_filename} for restart.")
+                        shutil.copy2(next_step_path, geometry_path)
+                        current_retries += 1
+                    else:
+                        planned["status"] = (f"Job 1 timed out but could not find "
+                                             f" {geometry_next_step_filename} to restart.")
+                        return {"planned": planned}
+                else:
+                    planned["status"] = f"Job 1 failed with unexpected status: {job_status}"
+                    return {"planned": planned}
+
+            if job_status != "COMPLETED":
+                planned["status"] = f"Job 1 failed after {MAX_RETRIES} retries. Halting workflow."
                 return {"planned": planned}
 
             relaxed_attractor_structure = read_final_geometry(settings.dft_code, attractor_dir)

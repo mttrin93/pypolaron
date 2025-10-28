@@ -288,9 +288,14 @@ def run_job_and_wait(script_path: Path,
                 time.sleep(30)
             elif state_token == 'COMPLETED':
                 log.info(f"SLURM Job {job_id} finished successfully.")
-                break
-            elif state_token in ['FAILED', 'CANCELLED', 'TIMEOUT', 'NODE_FAIL']:
+                return state_token
+                # break
+            # elif state_token in ['FAILED', 'CANCELLED', 'TIMEOUT', 'NODE_FAIL']:
+            elif state_token in ['FAILED', 'CANCELLED', 'NODE_FAIL']:
                 raise RuntimeError(f"SLURM Job {job_id} failed with state: {state_token}")
+            elif state_token == "TIMEOUT":
+                log.info(f"SLURM Job {job_id} failed with state: {state_token}")
+                return state_token
             else:
                 log.info(f"Job {job_id} in unexpected state: {state_token}. Waiting 30s.")
                 time.sleep(30)

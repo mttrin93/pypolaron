@@ -5,6 +5,7 @@ import numpy as np
 import subprocess
 import json
 import shutil
+from dataclasses import replace
 
 import logging
 import socket
@@ -271,7 +272,7 @@ class PolaronWorkflow:
 
         # and settings.do_submit
 
-        if is_job_completed(settings.dft_code, attractor_dir):
+        if not is_job_completed(settings.dft_code, attractor_dir):
 
             write_func(
                 site_index=chosen_site_indices,
@@ -335,6 +336,48 @@ class PolaronWorkflow:
                 planned["status"] = f"Job 1 failed after {MAX_RETRIES} retries. Halting workflow."
                 return {"planned": planned}
 
+            relaxed_attractor_structure = read_final_geometry(settings.dft_code, attractor_dir)
+            if relaxed_attractor_structure is None:
+                planned["status"] = "Could not read relaxed geometry for Job 1"
+                return {"planned": planned}
+
+            # --- JOB 2: FINAL POLARON RUN (Original M^n+ with Spin Seed) ---
+            if isinstance(settings.attractor_elements, str):
+                elements_list = [e.strip().capitalize() for e in settings.attractor_elements.split(',') if e.strip()]
+            else:
+                elements_list = [e.strip().capitalize() for e in settings.attractor_elements]
+
+            if len(elements_list) == 1 and len(chosen_site_indices) > 1:
+                elements_list = elements_list * len(chosen_site_indices)
+
+            indices_attractor = [index for index, site in enumerate(relaxed_attractor_structure) if
+                                 site.specie.symbol in elements_list]
+
+            chosen_sites_species = [generator.structure[index].specie for index in chosen_site_indices]
+            indices_original_elements = [chg_spec.element for chg_spec in chosen_sites_species]
+            final_polaron_structure = relaxed_attractor_structure.copy()
+
+            for index_attractor, index_original in zip(indices_attractor, indices_original_elements):
+                final_polaron_structure.replace(index_attractor, index_original)
+
+            polaron_dir = root / "02_Final_Polaron_Run"
+            settings_job2 = replace(settings, attractor_elements=None)
+
+            write_func(
+                site_index=chosen_site_indices,  # Seed the spin on the target site
+                vacancy_site_index=chosen_vacancy_site_indices,
+                settings=settings_job2,
+                outdir=str(polaron_dir),
+                is_charged_polaron_run=True,  # Charged/Magnetic calculation
+                base_structure=final_polaron_structure,
+            )
+            script_polaron = self.write_simple_job_script(polaron_dir)
+
+            planned["polaron_dir"] = str(polaron_dir)
+            planned["polaron_script"] = script_polaron
+
+            run_job_and_wait(script_polaron)
+
         else:
             relaxed_attractor_structure = read_final_geometry(settings.dft_code, attractor_dir)
             if relaxed_attractor_structure is None:
@@ -342,25 +385,33 @@ class PolaronWorkflow:
                 return {"planned": planned}
 
             # --- JOB 2: FINAL POLARON RUN (Original M^n+ with Spin Seed) ---
-            # TODO: check if Job 1 is completed, if yes jump directly to Job 2
             # TODO: implement the same structure of Job 1 in Job 2
-            # TODO: there is still some bug in the implementation of the structure reading
 
-            # Assuming we only substitute one element back for simplicity:
-            original_species = generator.structure[chosen_site_indices[0]].specie
+            if isinstance(settings.attractor_elements, str):
+                elements_list = [e.strip().capitalize() for e in settings.attractor_elements.split(',') if e.strip()]
+            else:
+                elements_list = [e.strip().capitalize() for e in settings.attractor_elements]
+
+            if len(elements_list) == 1 and len(chosen_site_indices) > 1:
+                elements_list = elements_list * len(chosen_site_indices)
+
+            indices_attractor = [index for index, site in enumerate(relaxed_attractor_structure) if
+                                 site.specie.symbol in elements_list]
+
+            chosen_sites_species = [generator.structure[index].specie for index in chosen_site_indices]
+            indices_original_elements = [chg_spec.element for chg_spec in chosen_sites_species]
             final_polaron_structure = relaxed_attractor_structure.copy()
-            for sc_index in chosen_site_indices:
-                final_polaron_structure.replace(sc_index, original_species)
 
-            log.info(
-                f"Substituted attractor element back to {original_species.symbol} at target site(s) for Job 2.")
+            for index_attractor, index_original in zip(indices_attractor, indices_original_elements):
+                final_polaron_structure.replace(index_attractor, index_original)
 
             polaron_dir = root / "02_Final_Polaron_Run"
+            settings_job2 = replace(settings, attractor_elements=None)
 
             write_func(
                 site_index=chosen_site_indices,  # Seed the spin on the target site
                 vacancy_site_index=chosen_vacancy_site_indices,
-                settings=settings,
+                settings=settings_job2,
                 outdir=str(polaron_dir),
                 is_charged_polaron_run=True,  # Charged/Magnetic calculation
                 base_structure=final_polaron_structure,

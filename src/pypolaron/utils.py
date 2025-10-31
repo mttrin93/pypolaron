@@ -142,7 +142,7 @@ class DftSettings:
     dielectric_eps: float = 10.0
     auto_analyze: bool = True
 
-    attractor_elements: str = None
+    attractor_elements: Optional[Union[str, List[str]]] = None
     aims_command: str = None
 
 def generate_occupation_matrix_content(
@@ -368,7 +368,6 @@ def is_job_completed(dft_code: str, job_directory: Path) -> bool:
     """
     dft_code = dft_code.lower()
 
-    # 1. Define required files and success message
     if dft_code == 'aims':
         required_files = ["geometry.in.next_step", "aims.out"]
         log_file = job_directory / "aims.out"
@@ -377,31 +376,25 @@ def is_job_completed(dft_code: str, job_directory: Path) -> bool:
     elif dft_code == 'vasp':
         required_files = ["CONTCAR", "OUTCAR"]
         log_file = job_directory / "OUTCAR"
-        # Common VASP success string (Final step converged)
         success_string = "reached required accuracy"
 
     else:
-        # If the code is unknown, we cannot reliably check completion
         return False
 
-    # 2. Check for required file existence
     for filename in required_files:
         if not (job_directory / filename).exists():
             return False
 
-    # 3. Check for successful termination string in the log file
     if log_file.exists():
         try:
             success = False
             with open(log_file, 'r') as f:
-                for line in enumerate(f):
+                for line in f:
                     if line.lstrip().startswith(success_string):
                         success = True
             return success
         except Exception as e:
-            # Handle potential file reading errors
             print(f"Warning: Could not read log file {log_file.name} for content check: {e}")
             return False
 
-    # Log file required but doesn't exist
     return False

@@ -165,11 +165,11 @@ class PolaronGenerator:
         mapped_indices = []
 
         for index in site_index:
-            target_specie = self.structure[index].specie
+            target_specie = self.structure[index].specie.symbol
             candidates = [
                 (i, site)
                 for i, site in enumerate(scell.sites)
-                if site.specie == target_specie and i not in used_indices
+                if site.specie.symbol == target_specie and i not in used_indices
             ]
 
             distances = np.linalg.norm(
@@ -332,7 +332,7 @@ class PolaronGenerator:
         else:
             total_charge = 0
 
-        if vacancy_site_index is not None:
+        if vacancy_site_index:
             vacancy_site_index_supercell = self._find_central_site_general_supercell(scell, vacancy_site_index)
             if vacancy_site_index_supercell:
                 scell.remove_sites(vacancy_site_index_supercell)
@@ -454,7 +454,7 @@ class PolaronGenerator:
         else:
             total_charge = 0
 
-        if vacancy_site_index is not None:
+        if vacancy_site_index:
             vacancy_site_index_supercell = self._find_central_site_general_supercell(scell, vacancy_site_index)
             if vacancy_site_index_supercell:
                 scell.remove_sites(vacancy_site_index_supercell)

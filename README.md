@@ -126,13 +126,15 @@ A more detailed description of the single options can be obtained running `run_g
 A common example command for relaxing an electron polaron in MgO using `aims`, with the 
 structure fetched from Materials Project, would be:
 
-`run_generator \
+```bash
+run_generator \
   -mq MgO \
   -mak ID \
   -ac "mpirun -np 28 /path/to/aims.x" \
   -sd /path/to/species \
   -rdr ./workdir \
-  -ds`
+  -ds
+ ```
 
 where the calculation is automatically submitted to the SLURM cluster.
 

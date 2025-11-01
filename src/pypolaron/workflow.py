@@ -130,57 +130,53 @@ class PolaronWorkflow:
         root = Path(settings.run_dir_root)
         root.mkdir(parents=True, exist_ok=True)
 
-        # Directories
-        pristine_dir = root / "pristine" if settings.run_pristine else None
-        charged_dir = root / "charged"
-
-        script_pristine = None
-
         if settings.dft_code == "aims":
             write_func = generator.write_fhi_aims_input_files
+            geometry_filenames = ("geometry.in", "geometry.in.next_step")
         elif settings.dft_code == "vasp":
             write_func = generator.write_vasp_input_files
+            geometry_filenames = ("POSCAR", "CONTCAR")
         else:
             raise ValueError(f"Unknown DFT tool: {settings.dft_code}. Must be 'aims' or 'vasp'.")
 
-        if settings.run_pristine:
-            write_func(
-                site_index=[],
-                vacancy_site_index=chosen_vacancy_site_indices,
-                settings=settings,
-                outdir=str(pristine_dir),
-                is_charged_polaron_run=False,
-            )
-            script_pristine = self.write_simple_job_script(pristine_dir)
+        planned = {}
 
-        write_func(
-            site_index=chosen_site_indices,
-            vacancy_site_index=chosen_vacancy_site_indices,
+        if settings.run_pristine:
+            pristine_dir = root / "pristine"
+
+            result_pristine = self._run_and_check_job(
+                job_name="pristine",
+                job_dir=pristine_dir,
+                write_func=write_func,
+                settings=settings,
+                chosen_site_indices=[],
+                chosen_vacancy_site_indices=chosen_vacancy_site_indices,
+                is_charged_polaron_run=False,
+                geometry_filenames=geometry_filenames,
+            )
+
+            if "status" in result_pristine and result_pristine["submitted"] == True:
+                return {"planned": result_pristine}
+
+            planned.update(result_pristine)
+
+        charged_dir = root / "charged"
+
+        result_charged = self._run_and_check_job(
+            job_name="charged",
+            job_dir=charged_dir,
+            write_func=write_func,
             settings=settings,
-            outdir=str(charged_dir),
+            chosen_site_indices=chosen_site_indices,
+            chosen_vacancy_site_indices=chosen_vacancy_site_indices,
             is_charged_polaron_run=True,
+            geometry_filenames=geometry_filenames,
         )
 
-        # 2) Write job scripts
-        pristine_dir_str = str(script_pristine) if settings.run_pristine else None
-        script_charged = self.write_simple_job_script(charged_dir)
+        if "status" in result_charged and result_charged["submitted"] == True:
+            return {"planned": result_charged}
 
-        planned = {
-            "pristine_dir": pristine_dir_str,
-            "charged_dir": str(charged_dir),
-            "pristine_script": script_pristine,
-            "charged_script": script_charged,
-            "instructions": "Run the scripts in the respective directories to perform calculations.",
-        }
-
-        # 3) Optionally submit
-        if settings.do_submit:
-            if settings.run_pristine:
-                subprocess.run(["bash", script_pristine], check=True)
-            subprocess.run(["bash", script_charged], check=True)
-            planned["submitted"] = True
-        else:
-            planned["submitted"] = False
+        planned.update(result_charged)
 
         # Initialize report
         report = {"planned": planned}
@@ -224,9 +220,7 @@ class PolaronWorkflow:
                     )
                     report["analysis"] = results
                 else:
-                    report["analysis_status"] = (
-                        "Aims outputs not found; run calculations first."
-                    )
+                    report["analysis_status"] = "Aims outputs not found; run calculations first."
             except Exception as e:
                 report["analysis_error"] = str(e)
 
@@ -391,7 +385,7 @@ class PolaronWorkflow:
             write_func = generator.write_vasp_input_files
             geometry_filenames = ("POSCAR", "CONTCAR")
         else:
-            raise ValueError(f"Unknown DFT tool: {settings.dft_code}")
+            raise ValueError(f"Unknown DFT tool: {settings.dft_code}. Must be 'aims' or 'vasp'.")
 
         planned = {}
 
@@ -460,7 +454,7 @@ class PolaronWorkflow:
             base_structure=final_polaron_structure,
         )
 
-        if "status" in result_job2:
+        if "status" in result_job2 and result_job2["submitted"] == True:
             return {"planned": result_job2}
 
         planned.update(result_job2)

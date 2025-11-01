@@ -339,6 +339,8 @@ def read_final_geometry(dft_code: str, job_directory: Path) -> Optional[Structur
             except Exception as e:
                 log.error(f"Error parsing AIMS geometry: {e}")
                 return None
+        else:
+            return None
     elif dft_code == "vasp":
         # VASP output for relaxed geometry
         final_geom_path = job_directory / "CONTCAR"
@@ -350,6 +352,8 @@ def read_final_geometry(dft_code: str, job_directory: Path) -> Optional[Structur
             except Exception as e:
                 log.error(f"Error parsing VASP CONTCAR: {e}")
                 return None
+        else:
+            return None
     else:
         log.error(f"Final geometry file not found for {dft_code.upper()} in {job_directory.name}.")
         return None

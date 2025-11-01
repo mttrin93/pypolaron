@@ -427,11 +427,7 @@ class PolaronGenerator:
 
         # TODO: add functionality to optimize the cell size as done in doped
         #  now the default is hse06, add functionality to choose between 3 different options:
-        #  1) perform calculations with a single hybrid functional (i.e. hse06 or pbe0)
-        #  2) perform calculations with only DFT+U
         #  3) firstly perform DFT+U with occ matrix control, then hybrid
-        #  4) firstly perform hybrid calculation with atom with one extra electron placed on the electron polaron position,
-        #  then a second hybrid with the original config
 
         outdir = Path(outdir)
         if outdir.exists():

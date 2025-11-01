@@ -439,12 +439,14 @@ def run_polaron_workflow(
     workflow = PolaronWorkflow(aims_executable_command=dft_params.aims_command)
 
     # Run the generation
-    workflow.run_polaron_workflow(
+    report = workflow.run_polaron_workflow(
         generator=polaron_generator,
         chosen_site_indices=chosen_polaron_sites,
         chosen_vacancy_site_indices=chosen_oxygen_vacancy_sites,
         settings=dft_params,
     )
+
+    return report
 
 def run_attractor_workflow(
         polaron_generator: PolaronGenerator,
@@ -468,9 +470,11 @@ def run_attractor_workflow(
     workflow = PolaronWorkflow(aims_executable_command=dft_params.aims_command)
 
     # Run the generation
-    workflow.run_attractor_workflow(
+    report = workflow.run_attractor_workflow(
         generator=polaron_generator,
         chosen_site_indices=chosen_polaron_sites,
         chosen_vacancy_site_indices=chosen_oxygen_vacancy_sites,
         settings=dft_params,
     )
+
+    return report

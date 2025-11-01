@@ -38,7 +38,7 @@ def main(args=None):
     )
 
     # 5) run workflow
-    run_polaron_workflow(
+    report = run_polaron_workflow(
         polaron_generator=polaron_generator,
         polaron_candidates=polaron_candidates,
         oxygen_vacancy_candidates=oxygen_vacancies_candidates,

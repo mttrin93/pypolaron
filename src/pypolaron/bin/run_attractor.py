@@ -54,7 +54,7 @@ def main(args=None):
     )
 
     # 5) run workflow
-    run_attractor_workflow(
+    report = run_attractor_workflow(
         polaron_generator=polaron_generator,
         polaron_candidates=polaron_candidates,
         oxygen_vacancy_candidates=oxygen_vacancies_candidates,

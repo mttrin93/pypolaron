@@ -48,14 +48,14 @@ cd pypolaron
 
 3. Run installation script:
 
-`pip install -e .`
+`pip install .`
 
-to install the package via `pip` in editable mode. Alternatively, run the command:
+to install the package via `pip`. Alternatively, run the command:
 
-`pip install -e .[dev]`
+`pip install .[dev]`
 
 to install the package and tests used for development. 
-Now, the `run_generator` script can be used to run the polaron generator workflows.
+Now, the `run_generator` and `run_attractor` scripts can be used to run the polaron workflows.
 
 ## Literature
 
@@ -79,26 +79,42 @@ this to run workflows starting from a local structure.
 * `-mq, --mp-query`: query the Materials Project by ID (e.g. `mp-2657`) or by composition 
 (e.g. TiO2).
 
+* `-mak, --mp-api-key`: Materials Project API Key. Defaults to the MP_API_KEY environment variable
+
 * `-dc, --dft-code`: choose the DFT backend (`vasp` or `aims`).
+
+* `-xf, --xc-functional`: DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06', 'pbe0'). Default 
+is hse06.
+
+* `-hp, --hubbard-parameters`: Specify Hubbard parameters as a element:orbital:U string 
+(e.g., 'Ti:3d:2.65,Fe:3d:4.0')
+
+* `-fsp, --fix-spin-moment`: Specify fixed_spin_moment for FHI-aims calculation, that allows to 
+enforce fixed overall spin moment.
+
+*  `-der, --disable-elsi-restart`: If set, elsi_restart and elsi_restart_use_overlap will not 
+be used. Its used is recommended.  
+  
+* `-a, --alpha ALPHA`: Fraction of exact exchange (alpha) for hybrid functionals (HSE06/PBE0). 
+Defaults to 0.25.
 
 * `-ct, --calc-type`: calculation type: `scf`, `relax-atoms`, or `relax-all`.
 
-* `-pt, --polaron-type`: electron or hole.
+* `-pt, --polaron-type`: electron or hole. Default is electron.
 
 * `-pn, --polaron-number`: number of extra polarons to add (default: 1).
 
-* `-ovn, --oxygen-vacancy-number`: number of oxygen vacancies to create (each vacancy 
-typically produces two electron polarons).
+* `-ovn, --oxygen-vacancy-number`: number of oxygen vacancies to create.  Default is 0.
 
-* `-s, --supercell-dims`: three integers for supercell replication, e.g. `-s 2 2 2`.
+* `-s, --supercell-dims`: three integers for supercell replication, e.g. `-s 2 2 2`. 
+Default is (2, 2, 2)
 
 * `-sm, --spin-moment` and `-ssm, --set-site-magmoms`: seed initial magnetic moments on 
 the target site(s) to favour localisation.
 
 * `-rdr, --run-dir-root`: root path where workflow run directories are created.
 
-* `-ds, --do-submit`: enable submission of generated job scripts to the scheduler immediately 
-(placeholder logic in development; see job templates).
+* `-ds, --do-submit`: enable submission of generated job scripts to the scheduler immediately.
 
 * `-ac, --aims-command` and `-sd, --species-dir`: AIMS-specific settings required when 
 using `--dft-code aims`.
@@ -115,6 +131,11 @@ structure fetched from Materials Project, would be:
 `run_generator -mq MgO -mak ID -ac "mpirun -np 28 /path/to/aims.x" -sd /path/to/species -rdr ./workdir -ds`
 
 where the calculation is automatically submitted to the SLURM cluster.
+
+The `run_attractor` executable can be run with the following additional options:
+
+* `-ae, --attractor-elements`: Element symbol used to substitute the host atom to create the 
+localized potential well. 
 
 ## Development & testing
 

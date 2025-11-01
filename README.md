@@ -79,12 +79,11 @@ this to run workflows starting from a local structure.
 * `-mq, --mp-query`: query the Materials Project by ID (e.g. `mp-2657`) or by composition 
 (e.g. TiO2).
 
-* `-mak, --mp-api-key`: Materials Project API Key. Defaults to the MP_API_KEY environment variable
+* `-mak, --mp-api-key`: Materials Project API Key.
 
 * `-dc, --dft-code`: choose the DFT backend (`vasp` or `aims`).
 
-* `-xf, --xc-functional`: DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06', 'pbe0'). Default 
-is hse06.
+* `-xf, --xc-functional`: DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06', 'pbe0').
 
 * `-hp, --hubbard-parameters`: Specify Hubbard parameters as a element:orbital:U string 
 (e.g., 'Ti:3d:2.65,Fe:3d:4.0')
@@ -95,19 +94,17 @@ enforce fixed overall spin moment.
 *  `-der, --disable-elsi-restart`: If set, elsi_restart and elsi_restart_use_overlap will not 
 be used. Its used is recommended.  
   
-* `-a, --alpha ALPHA`: Fraction of exact exchange (alpha) for hybrid functionals (HSE06/PBE0). 
-Defaults to 0.25.
+* `-a, --alpha ALPHA`: Fraction of exact exchange (alpha) for hybrid functionals (HSE06/PBE0).
 
 * `-ct, --calc-type`: calculation type: `scf`, `relax-atoms`, or `relax-all`.
 
-* `-pt, --polaron-type`: electron or hole. Default is electron.
+* `-pt, --polaron-type`: electron or hole.
 
-* `-pn, --polaron-number`: number of extra polarons to add (default: 1).
+* `-pn, --polaron-number`: number of extra polarons to add.
 
-* `-ovn, --oxygen-vacancy-number`: number of oxygen vacancies to create.  Default is 0.
+* `-ovn, --oxygen-vacancy-number`: number of oxygen vacancies to create.
 
-* `-s, --supercell-dims`: three integers for supercell replication, e.g. `-s 2 2 2`. 
-Default is (2, 2, 2)
+* `-s, --supercell-dims`: three integers for supercell replication, e.g. `-s 2 2 2`.
 
 * `-sm, --spin-moment` and `-ssm, --set-site-magmoms`: seed initial magnetic moments on 
 the target site(s) to favour localisation.
@@ -119,16 +116,23 @@ the target site(s) to favour localisation.
 * `-ac, --aims-command` and `-sd, --species-dir`: AIMS-specific settings required when 
 using `--dft-code aims`.
 
-* `-l, --log`: set a log filename (default `log.txt`).
+* `-l, --log`: set a log filename.
 
 * `-rp, --run-pristine`: run the pristine (undefected) structure, useful for formation 
 energy references.
 
-A more detailed description can be obtained running `run_generator -h`. 
+A more detailed description of the single options can be obtained running `run_generator -h`. 
+
 A common example command for relaxing an electron polaron in MgO using `aims`, with the 
 structure fetched from Materials Project, would be:
 
-`run_generator -mq MgO -mak ID -ac "mpirun -np 28 /path/to/aims.x" -sd /path/to/species -rdr ./workdir -ds`
+`run_generator \
+  -mq MgO \
+  -mak ID \
+  -ac "mpirun -np 28 /path/to/aims.x" \
+  -sd /path/to/species \
+  -rdr ./workdir \
+  -ds`
 
 where the calculation is automatically submitted to the SLURM cluster.
 

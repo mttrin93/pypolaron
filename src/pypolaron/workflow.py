@@ -1,11 +1,13 @@
 from pathlib import Path
-from typing import Dict, Tuple, Optional, Union, List, Any
+from typing import Dict, Tuple, Optional, Union, List, Any, Callable
 import textwrap
 import numpy as np
 import subprocess
 import json
 import shutil
 from dataclasses import replace
+
+from pymatgen.core import Structure
 
 import logging
 import socket
@@ -234,13 +236,141 @@ class PolaronWorkflow:
 
         return report
 
+    def _execute_job_with_rerun(
+            self,
+            planned: Dict[str, Union[str, float, bool]],
+            input_script: Path,
+            input_dir: Path,
+            geometry_filename: str,
+            geometry_next_step_filename: str,
+    ):
+        MAX_RETRIES = 3
+        planned["submitted"] = True
+        current_retries = 0
+        job_status = "PENDING"
+
+        while current_retries < MAX_RETRIES:
+            if current_retries > 0:
+                log.info(f"Retrying Job 1 after TIMEOUT (Attempt {current_retries + 1}/{MAX_RETRIES}).")
+
+            try:
+                job_status = run_job_and_wait(input_script)
+            except RuntimeError as e:
+                planned["status"] = f"Job 1 failed on attempt {current_retries + 1}. Fatal error: {e}"
+                return planned
+                # return {"planned": planned}
+
+            if job_status == "COMPLETED":
+                log.info(f"Job 1 completed successfully after {current_retries} retries.")
+                break
+            elif job_status == "TIMEOUT":
+                next_step_path = input_dir / geometry_next_step_filename
+                geometry_path = input_dir / geometry_filename
+
+                if next_step_path.exists():
+                    log.warning(
+                        f"TIMEOUT detected. Copying {geometry_next_step_filename} to "
+                        f" {geometry_filename} for restart.")
+                    shutil.copy2(next_step_path, geometry_path)
+                    current_retries += 1
+                else:
+                    planned["status"] = (f"Job 1 timed out but could not find "
+                                         f" {geometry_next_step_filename} to restart.")
+                    return planned
+            else:
+                planned["status"] = f"Job 1 failed with unexpected status: {job_status}"
+                return planned
+
+        if job_status != "COMPLETED":
+            planned["status"] = f"Job 1 failed after {MAX_RETRIES} retries. Halting workflow."
+            return planned
+
+        return planned
+
+    def remove_attractor_elements(
+            self,
+            generator: PolaronGenerator,
+            chosen_site_indices: Union[int, List[int]],
+            settings: DftSettings,
+            relaxed_attractor_structure: Structure,
+    ) -> Structure:
+        """
+        Move original atoms back to previous attractor locations
+        """
+        if isinstance(settings.attractor_elements, str):
+            elements_list = [e.strip().capitalize() for e in settings.attractor_elements.split(',') if e.strip()]
+        else:
+            elements_list = [e.strip().capitalize() for e in settings.attractor_elements]
+
+        if len(elements_list) == 1 and len(chosen_site_indices) > 1:
+            elements_list = elements_list * len(chosen_site_indices)
+
+        indices_attractor = [index for index, site in enumerate(relaxed_attractor_structure) if
+                             site.specie.symbol in elements_list]
+
+        chosen_sites_species = [generator.structure[index].specie for index in chosen_site_indices]
+        indices_original_elements = [chg_spec.element for chg_spec in chosen_sites_species]
+        final_polaron_structure = relaxed_attractor_structure.copy()
+
+        for index_attractor, index_original in zip(indices_attractor, indices_original_elements):
+            final_polaron_structure.replace(index_attractor, index_original)
+
+        return final_polaron_structure
+
+    def _run_and_check_job(
+            self,
+            job_name: str,
+            job_dir: Path,
+            write_func: Callable,
+            settings: DftSettings,
+            chosen_site_indices: Union[int, List[int]],
+            chosen_vacancy_site_indices: Union[int, List[int]],
+            is_charged_polaron_run: bool,
+            geometry_filenames: Tuple[str, str],  # (geometry_filename, geometry_next_step_filename)
+            base_structure: Optional[Structure] = None,
+    ) -> Dict[str, Union[str, float, bool]]:
+        """Runs a single job, handles file writing, execution, and status check."""
+
+        # job_dir.mkdir(parents=True, exist_ok=True)
+        geometry_filename, geometry_next_step_filename = geometry_filenames
+
+        # 1. Write input files
+        write_func(
+            site_index=chosen_site_indices,
+            vacancy_site_index=chosen_vacancy_site_indices,
+            settings=settings,
+            outdir=str(job_dir),
+            is_charged_polaron_run=is_charged_polaron_run,
+            base_structure=base_structure,
+        )
+        script_path = self.write_simple_job_script(job_dir)
+
+        planned = {
+            f"{job_name.lower()}_dir": str(job_dir),
+            f"{job_name.lower()}_script": str(script_path),
+        }
+
+        # 2. Run and check status
+        if settings.do_submit:
+            planned = self._execute_job_with_rerun(
+                planned=planned,
+                input_script=script_path,
+                input_dir=job_dir,
+                geometry_filename=geometry_filename,
+                geometry_next_step_filename=geometry_next_step_filename,
+            )
+        else:
+            planned["submitted"] = False
+
+        return planned
+
     def run_attractor_workflow(
             self,
             generator: PolaronGenerator,
             chosen_site_indices: Union[int, List[int]],
             chosen_vacancy_site_indices: Union[int, List[int]],
             settings: DftSettings,
-    ) -> Dict[str, Union[str, float, Dict[str, Any]]]:
+    ) -> Dict[str, Union[str, float, bool, Path, Dict[str, Any]]]:
         """
         Manages the sequential file generation and optional execution for the Electron Attractor method.
 
@@ -249,134 +379,71 @@ class PolaronWorkflow:
         2. Polaron Run (original element substituted back), starting from Job 1 geometry
         3. Pristine Reference (original structure with no polaron, fully relaxed)
         """
-        MAX_RETRIES = 3
 
         root = Path(settings.run_dir_root)
         root.mkdir(parents=True, exist_ok=True)
 
         if settings.dft_code == "aims":
             write_func = generator.write_fhi_aims_input_files
-            geometry_filename = "geometry.in"
-            geometry_next_step_filename = "geometry.in.next_step"
+            geometry_filenames = ("geometry.in", "geometry.in.next_step")
         elif settings.dft_code == "vasp":
             write_func = generator.write_vasp_input_files
-            geometry_filename = "POSCAR"
-            geometry_next_step_filename = "CONTCAR"
+            geometry_filenames = ("POSCAR", "CONTCAR")
         else:
             raise ValueError(f"Unknown DFT tool: {settings.dft_code}")
 
-        planned = {}
-
-        # --- JOB 1: ATTRACTOR RELAXATION (M^0 Substitution) ---
         attractor_dir = root / "01_Attractor_Run"
-
-        # and settings.do_submit
+        planned = {}
 
         if not is_job_completed(settings.dft_code, attractor_dir):
 
-            write_func(
-                site_index=chosen_site_indices,
-                vacancy_site_index=chosen_vacancy_site_indices,
+            result_job1 = self._run_and_check_job(
+                job_name="attractor",
+                job_dir=attractor_dir,
+                write_func=write_func,
                 settings=settings,
-                outdir=str(attractor_dir),
+                chosen_site_indices=chosen_site_indices,
+                chosen_vacancy_site_indices=chosen_vacancy_site_indices,
                 is_charged_polaron_run=False,
+                geometry_filenames=geometry_filenames,
             )
-            script_attractor = self.write_simple_job_script(attractor_dir)
 
-            planned = {
-                "attractor_dir": str(attractor_dir),
-                "attractor_script": script_attractor,
-                "instructions": "Run Job 1 first. Then run Job 2 and 3 sequentially using the geometry from Job 1."
-            }
+            if "status" in result_job1:
+                return {"planned": result_job1}
 
-            relaxed_attractor_structure = None
-            # if settings.do_submit:
-            planned["submitted"] = True
-            current_retries = 0
-            job_status = "PENDING"
-
-            # try:
-            #     state_token = run_job_and_wait(script_attractor)
-            # except Exception as e:
-            #     planned["status"] = f"Job 1 failed. Error: {e}"
-            #     return {"planned": planned}
-
-            while current_retries < MAX_RETRIES:
-                if current_retries > 0:
-                    log.info(f"Retrying Job 1 after TIMEOUT (Attempt {current_retries + 1}/{MAX_RETRIES}).")
-
-                try:
-                    job_status = run_job_and_wait(script_attractor)
-                except RuntimeError as e:
-                    planned["status"] = f"Job 1 failed on attempt {current_retries + 1}. Fatal error: {e}"
-                    return {"planned": planned}
-
-                if job_status == "COMPLETED":
-                    log.info(f"Job 1 completed successfully after {current_retries} retries.")
-                    break
-                elif job_status == "TIMEOUT":
-                    next_step_path = attractor_dir / geometry_next_step_filename
-                    geometry_path = attractor_dir / geometry_filename
-
-                    if next_step_path.exists():
-                        log.warning(
-                            f"TIMEOUT detected. Copying {geometry_next_step_filename} to "
-                            f" {geometry_filename} for restart.")
-                        shutil.copy2(next_step_path, geometry_path)
-                        current_retries += 1
-                    else:
-                        planned["status"] = (f"Job 1 timed out but could not find "
-                                             f" {geometry_next_step_filename} to restart.")
-                        return {"planned": planned}
-                else:
-                    planned["status"] = f"Job 1 failed with unexpected status: {job_status}"
-                    return {"planned": planned}
-
-            if job_status != "COMPLETED":
-                planned["status"] = f"Job 1 failed after {MAX_RETRIES} retries. Halting workflow."
-                return {"planned": planned}
+            planned.update(result_job1)
 
             relaxed_attractor_structure = read_final_geometry(settings.dft_code, attractor_dir)
             if relaxed_attractor_structure is None:
                 planned["status"] = "Could not read relaxed geometry for Job 1"
                 return {"planned": planned}
 
-            # --- JOB 2: FINAL POLARON RUN (Original M^n+ with Spin Seed) ---
-            if isinstance(settings.attractor_elements, str):
-                elements_list = [e.strip().capitalize() for e in settings.attractor_elements.split(',') if e.strip()]
-            else:
-                elements_list = [e.strip().capitalize() for e in settings.attractor_elements]
-
-            if len(elements_list) == 1 and len(chosen_site_indices) > 1:
-                elements_list = elements_list * len(chosen_site_indices)
-
-            indices_attractor = [index for index, site in enumerate(relaxed_attractor_structure) if
-                                 site.specie.symbol in elements_list]
-
-            chosen_sites_species = [generator.structure[index].specie for index in chosen_site_indices]
-            indices_original_elements = [chg_spec.element for chg_spec in chosen_sites_species]
-            final_polaron_structure = relaxed_attractor_structure.copy()
-
-            for index_attractor, index_original in zip(indices_attractor, indices_original_elements):
-                final_polaron_structure.replace(index_attractor, index_original)
+            final_polaron_structure = self.remove_attractor_elements(
+                generator=generator,
+                chosen_site_indices=chosen_site_indices,
+                settings=settings,
+                relaxed_attractor_structure=relaxed_attractor_structure
+            )
 
             polaron_dir = root / "02_Final_Polaron_Run"
             settings_job2 = replace(settings, attractor_elements=None)
 
-            write_func(
-                site_index=chosen_site_indices,  # Seed the spin on the target site
-                vacancy_site_index=chosen_vacancy_site_indices,
+            result_job2 = self._run_and_check_job(
+                job_name="polaron",
+                job_dir=polaron_dir,
+                write_func=write_func,
                 settings=settings_job2,
-                outdir=str(polaron_dir),
-                is_charged_polaron_run=True,  # Charged/Magnetic calculation
+                chosen_site_indices=chosen_site_indices,
+                chosen_vacancy_site_indices=chosen_vacancy_site_indices,
+                is_charged_polaron_run=True,
+                geometry_filenames=geometry_filenames,
                 base_structure=final_polaron_structure,
             )
-            script_polaron = self.write_simple_job_script(polaron_dir)
 
-            planned["polaron_dir"] = str(polaron_dir)
-            planned["polaron_script"] = script_polaron
+            if "status" in result_job2:
+                return {"planned": result_job2}
 
-            run_job_and_wait(script_polaron)
+            planned.update(result_job2)
 
         else:
             relaxed_attractor_structure = read_final_geometry(settings.dft_code, attractor_dir)
@@ -384,65 +451,50 @@ class PolaronWorkflow:
                 planned["status"] = "Could not read relaxed geometry for Job 1"
                 return {"planned": planned}
 
-            # --- JOB 2: FINAL POLARON RUN (Original M^n+ with Spin Seed) ---
-            # TODO: implement the same structure of Job 1 in Job 2
-
-            if isinstance(settings.attractor_elements, str):
-                elements_list = [e.strip().capitalize() for e in settings.attractor_elements.split(',') if e.strip()]
-            else:
-                elements_list = [e.strip().capitalize() for e in settings.attractor_elements]
-
-            if len(elements_list) == 1 and len(chosen_site_indices) > 1:
-                elements_list = elements_list * len(chosen_site_indices)
-
-            indices_attractor = [index for index, site in enumerate(relaxed_attractor_structure) if
-                                 site.specie.symbol in elements_list]
-
-            chosen_sites_species = [generator.structure[index].specie for index in chosen_site_indices]
-            indices_original_elements = [chg_spec.element for chg_spec in chosen_sites_species]
-            final_polaron_structure = relaxed_attractor_structure.copy()
-
-            for index_attractor, index_original in zip(indices_attractor, indices_original_elements):
-                final_polaron_structure.replace(index_attractor, index_original)
+            final_polaron_structure = self.remove_attractor_elements(
+                generator=generator,
+                chosen_site_indices=chosen_site_indices,
+                settings=settings,
+                relaxed_attractor_structure=relaxed_attractor_structure
+            )
 
             polaron_dir = root / "02_Final_Polaron_Run"
             settings_job2 = replace(settings, attractor_elements=None)
 
-            write_func(
-                site_index=chosen_site_indices,  # Seed the spin on the target site
-                vacancy_site_index=chosen_vacancy_site_indices,
+            result_job2 = self._run_and_check_job(
+                job_name="polaron",
+                job_dir=polaron_dir,
+                write_func=write_func,
                 settings=settings_job2,
-                outdir=str(polaron_dir),
-                is_charged_polaron_run=True,  # Charged/Magnetic calculation
+                chosen_site_indices=chosen_site_indices,
+                chosen_vacancy_site_indices=chosen_vacancy_site_indices,
+                is_charged_polaron_run=True,
+                geometry_filenames=geometry_filenames,
                 base_structure=final_polaron_structure,
             )
-            script_polaron = self.write_simple_job_script(polaron_dir)
 
-            planned["polaron_dir"] = str(polaron_dir)
-            planned["polaron_script"] = script_polaron
+            if "status" in result_job2:
+                return {"planned": result_job2}
 
-            run_job_and_wait(script_polaron)
+            planned.update(result_job2)
 
-            #
-            # script_pristine = None
-            # pristine_dir = None
-            # if settings.run_pristine:
-            #     pristine_dir = root / "03_Pristine_Ref"
-            #
-            #     # This job should ideally also start from the relaxed host lattice.
-            #     write_func(
-            #         site_index=[],
-            #         vacancy_site_index=chosen_vacancy_site_indices,
-            #         settings=settings,
-            #         outdir=str(pristine_dir),
-            #         is_charged_polaron_run=False,
-            #     )
-            #     script_pristine = self.write_simple_job_script(pristine_dir)
-            #
-            #     planned["pristine_dir"] = str(pristine_dir)
-            #     planned["pristine_script"] = script_pristine
-            #
-            #     # 3a. Submit Job 3 and wait (Conceptual)
-            #     run_job_and_wait(script_pristine)
+        if settings.run_pristine:
+            pristine_dir = root / "03_Pristine_Ref"
+
+            result_pristine = self._run_and_check_job(
+                job_name="pristine",
+                job_dir=pristine_dir,
+                write_func=write_func,
+                settings=settings,
+                chosen_site_indices=[],
+                chosen_vacancy_site_indices=chosen_vacancy_site_indices,
+                is_charged_polaron_run=False,
+                geometry_filenames=geometry_filenames,
+            )
+
+            if "status" in result_pristine:
+                return {"planned": result_pristine}
+
+            planned.update(result_pristine)
 
         return {"planned": planned}

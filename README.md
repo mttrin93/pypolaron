@@ -55,7 +55,18 @@ to install the package via `pip`. Alternatively, run the command:
 `pip install .[dev]`
 
 to install the package and tests used for development. 
-Now, the `run_generator` and `run_attractor` scripts can be used to run the polaron workflows.
+Now, the `run_generator`, `run_attractor` and `run_pbeu_plus_hybrid` scripts can be used to run the polaron workflows.
+
+**Script overview:**
+
+* `run_generator` — generates DFT input files and submission scripts, and optionally submits polaron calculations 
+jobs (relaxations, single scf runs).
+
+* `run_attractor` — generates DFT input files and submission scripts, and optionally submits polaron relaxation
+jobs using the electron attractor method [3]
+
+* `run_pbeu_plus_hybrid` — generates DFT input files and submission scripts, and optionally submits polaron relaxation
+jobs performing a combination of DFT+U and hybrid-functional relaxations.
 
 ## Literature
 
@@ -71,7 +82,7 @@ The following literature contains useful discussions of various aspects of polar
 
 ## Running workflow (CLI executables)
 
-The `run_generator` executable can be run with the following options:
+The `run_generator`, `run_attractor` and `run_pbeu_plus_hybrid` executables can be run with the following options:
 
 * `-f, --file`: path to a structure file (POSCAR, CIF, geometry.in, structure.xyz). Use 
 this to run workflows starting from a local structure.
@@ -141,7 +152,8 @@ where the calculation is automatically submitted to the SLURM cluster.
 The `run_attractor` executable can be run with the following additional options:
 
 * `-ae, --attractor-elements`: Element symbol used to substitute the host atom to create the 
-localized potential well. 
+localized potential well.
+
 
 ## Development & testing
 

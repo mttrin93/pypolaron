@@ -426,8 +426,6 @@ class PolaronGenerator:
         """
 
         # TODO: add functionality to optimize the cell size as done in doped
-        #  now the default is hse06, add functionality to choose between 3 different options:
-        #  3) firstly perform DFT+U with occ matrix control, then hybrid
 
         outdir = Path(outdir)
         if outdir.exists():

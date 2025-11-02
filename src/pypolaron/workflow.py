@@ -91,19 +91,13 @@ class PolaronWorkflow:
                 #SBATCH -J pypolaron
                 #SBATCH --nodes={self.policy.nnodes}
                 #SBATCH --ntasks-per-node={self.policy.ntasks}
-                #SBATCH --time={self.policy.walltime}\n
+                #SBATCH --time={self.policy.walltime}
                 \n
                 \n
-                module purge
-                module load intel/19.1.2  mkl/2020.2 impi/2019.8  gcc/10  cmake/3.26 elpa/mpi/openmp/2021.05.001 hdf5-serial/1.8.22\n
+                {self.policy.environment_setup}
                 \n
-                export OMP_NUM_THREADS=1
-                export MKL_DYNAMIC=FALSE
-                export MKL_NUM_THREADS=1
                 \n
                 cd {workdir} 
-                export LD_LIBRARY_PATH=/mpcdf/soft/SLE_15/packages/x86_64/intel_parallel_studio/2020.2/compilers_and_libraries/linux/lib/intel64_lin:$LD_LIBRARY_PATH
-                \n
                 {self.aims_executable_command} > aims.out
             """
             )

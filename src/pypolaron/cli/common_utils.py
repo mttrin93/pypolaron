@@ -249,6 +249,13 @@ def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentPa
         help="Job scheduler to use ('slurm' or 'local' bash execution). Default: slurm."
     )
 
+    policy_group.add_argument(
+        "--env-setup",
+        type=str,
+        default=None,
+        help="Optional: Override the default module load/export commands as a raw string or path to a file."
+    )
+
     return parser
 
 
@@ -370,6 +377,7 @@ def map_args_to_policy(args_parse: argparse.Namespace) -> WorkflowPolicy:
 
     policy_params = {
         "nnodes": args_parse.nnodes,
+        "environment_setup": args_parse.env_setup,
         "ntasks": args_parse.ntasks,
         "walltime": args_parse.walltime,
         "scheduler": args_parse.scheduler,

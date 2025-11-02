@@ -168,6 +168,7 @@ class WorkflowPolicy:
     ntasks: int = 72
     walltime: str = "02:00:00"
     scheduler: str = "slurm"
+    environment_setup: str = field(default="")
 
     # Rerun/Stability Policy
     max_retries: int = 3

@@ -375,9 +375,15 @@ def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftSettings:
 def map_args_to_policy(args_parse: argparse.Namespace) -> WorkflowPolicy:
     """Maps parsed CLI arguments to the WorkflowPolicy dataclass."""
 
+    env_setup_str = args_parse.env_setup
+
+    if env_setup_str:
+        if Path(env_setup_str).is_file():
+            env_setup_str = Path(env_setup_str).read_text()
+
     policy_params = {
         "nnodes": args_parse.nnodes,
-        "environment_setup": args_parse.env_setup,
+        "environment_setup": env_setup_str if env_setup_str else WorkflowPolicy.environment_setup,
         "ntasks": args_parse.ntasks,
         "walltime": args_parse.walltime,
         "scheduler": args_parse.scheduler,

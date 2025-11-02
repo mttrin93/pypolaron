@@ -156,7 +156,6 @@ class DftSettings:
     auto_analyze: bool = True
 
     attractor_elements: Optional[Union[str, List[str]]] = None
-    aims_command: str = None
 
 @dataclass(frozen=True)  # frozen=True makes the policy immutable, which is ideal
 class WorkflowPolicy:
@@ -169,6 +168,7 @@ class WorkflowPolicy:
     walltime: str = "02:00:00"
     scheduler: str = "slurm"
     environment_setup: str = field(default="")
+    aims_command: str = None
 
     # Rerun/Stability Policy
     max_retries: int = 3

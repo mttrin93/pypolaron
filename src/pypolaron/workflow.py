@@ -38,7 +38,6 @@ class PolaronWorkflow:
         self,
         generator: PolaronGenerator,
         log: logging.Logger,
-        aims_executable_command: str,
         dft_code: str,
         policy: WorkflowPolicy,
         epsilon: Optional[float] = None,
@@ -47,7 +46,6 @@ class PolaronWorkflow:
     ):
         self.generator = generator
         self.log = log
-        self.aims_executable_command = aims_executable_command
         self.dft_code = dft_code
         self.epsilon = epsilon
         self.fermi_energy = fermi_energy
@@ -98,7 +96,7 @@ class PolaronWorkflow:
                 \n
                 \n
                 cd {workdir} 
-                {self.aims_executable_command} > aims.out
+                {self.policy.aims_command} > aims.out
             """
             )
         else:

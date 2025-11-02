@@ -176,13 +176,6 @@ def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentPa
     )
 
     parser.add_argument(
-        "-ac", "--aims-command",
-        type=str,
-        default="mpirun -np 8 aims.x",
-        help="Full command to execute FHI-aims (used in job bin)."
-    )
-
-    parser.add_argument(
         "-sd", "--species-dir",
         type=str,
         help="Directory containing FHI-aims species files."
@@ -254,6 +247,13 @@ def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentPa
         type=str,
         default=None,
         help="Optional: Override the default module load/export commands as a raw string or path to a file."
+    )
+
+    policy_group.add_argument(
+        "-ac", "--aims-command",
+        type=str,
+        default="mpirun -np 8 aims.x",
+        help="Full command to execute FHI-aims (used in job bin)."
     )
 
     return parser
@@ -356,7 +356,6 @@ def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftSettings:
         "functional": args_parse.xc_functional,
         "calc_type": args_parse.calc_type,
         "supercell": args_parse.supercell_dims,
-        "aims_command": args_parse.aims_command,
         "species_dir": args_parse.species_dir,
         "run_dir_root": args_parse.run_dir_root,
         "do_submit": args_parse.do_submit,
@@ -388,6 +387,7 @@ def map_args_to_policy(args_parse: argparse.Namespace) -> WorkflowPolicy:
         "walltime": args_parse.walltime,
         "scheduler": args_parse.scheduler,
         "max_retries": args_parse.max_retries,
+        "aims_command": args_parse.aims_command,
     }
 
     return WorkflowPolicy(**policy_params)
@@ -501,7 +501,6 @@ def run_polaron_workflow(
     # Initialize Workflow
     workflow = PolaronWorkflow(
         generator=polaron_generator,
-        aims_executable_command=dft_params.aims_command,
         dft_code=dft_params.dft_code,
         policy=policy,
         log=log,
@@ -539,7 +538,6 @@ def run_sequential_relaxations_workflow(
     # Initialize Workflow
     workflow = PolaronWorkflow(
         generator=polaron_generator,
-        aims_executable_command=dft_params.aims_command,
         dft_code=dft_params.dft_code,
         policy=policy,
         log=log,

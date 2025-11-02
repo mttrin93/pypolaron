@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Tuple, Optional, Union, List, Any, Callable
+from typing import Dict, Tuple, Optional, Union, List, Any, Literal
 import textwrap
 import numpy as np
 import logging
@@ -348,25 +348,46 @@ class PolaronWorkflow:
 
         return planned
 
-    def run_attractor_workflow(
-            self,
-            chosen_site_indices: Union[int, List[int]],
-            chosen_vacancy_site_indices: Union[int, List[int]],
-            settings: DftSettings,
+    def sequential_relaxations_workflow(
+        self,
+        chosen_site_indices: Union[int, List[int]],
+        chosen_vacancy_site_indices: Union[int, List[int]],
+        settings: DftSettings,
+        method: Literal["attractor", "pbeu_plus_hybrid"],
     ) -> Dict[str, Union[str, float, bool, Path, Dict[str, Any]]]:
         """
-        Manages the sequential file generation and optional execution for the Electron Attractor method.
+        Manages sequential file generation and execution for polaron relaxations calculations,
+        using either the attractor or PBEU + hybrid relaxation method.
 
-        This method requires three jobs:
+        The attractor method performs three jobs:
         1. Attractor Run -> Relaxed Geometry (must run first)
         2. Polaron Run (original element substituted back), starting from Job 1 geometry
         3. Pristine Reference (original structure with no polaron, fully relaxed)
-        """
 
+        The PBEU + hybrid method performs three jobs:
+        1. PBEU relaxation with occupation matrix control
+        2. Polaron Run performed with hybrid functional, starting from Job 1 geometry
+        3. Pristine Reference (original structure with no polaron, fully relaxed)
+
+        """
         root = Path(settings.run_dir_root)
         root.mkdir(parents=True, exist_ok=True)
 
         planned = {}
+
+        if method == "attractor":
+            job1_dir = root / "01_Attractor_Run"
+            job1_name = "attractor"
+            settings_job1 = settings
+            requires_attractor_cleanup = True
+        elif method == "pbeu_plus_hybrid":
+            job1_dir = root / "01_pbeu_Run"
+            job1_name = "pbeu"
+            settings_job1 = replace(settings, functional='pbeu')
+            requires_attractor_cleanup = False
+        else:
+            self.log.error(f"Unknown polaron method: {method}")
+            return {"planned": {"status": f"Fatal error: Unknown polaron method: {method}"}}
 
         if settings.run_pristine:
             pristine_dir = root / "Pristine_Ref"
@@ -385,13 +406,11 @@ class PolaronWorkflow:
 
             planned.update(result_pristine)
 
-        attractor_dir = root / "01_Attractor_Run"
-
-        if not is_job_completed(settings.dft_code, attractor_dir):
+        if not is_job_completed(settings.dft_code, job1_dir):
             result_job1 = self._run_and_check_job(
-                job_name="attractor",
-                job_dir=attractor_dir,
-                settings=settings,
+                job_name=job1_name,
+                job_dir=job1_dir,
+                settings=settings_job1,
                 chosen_site_indices=chosen_site_indices,
                 chosen_vacancy_site_indices=chosen_vacancy_site_indices,
                 is_charged_polaron_run=False,
@@ -402,23 +421,28 @@ class PolaronWorkflow:
 
             planned.update(result_job1)
 
-        relaxed_attractor_structure = read_final_geometry(
+        relaxed_intermediate_structure = read_final_geometry(
             dft_code=settings.dft_code,
-            job_directory=attractor_dir,
+            job_directory=job1_dir,
             log=self.log
         )
-        if relaxed_attractor_structure is None:
-            planned["status"] = "Could not read relaxed geometry for Job 1"
+        if relaxed_intermediate_structure is None:
+            planned["status"] = f"Could not read relaxed geometry from {job1_name} run."
             return {"planned": planned}
 
-        final_polaron_structure = self.remove_attractor_elements(
-            chosen_site_indices=chosen_site_indices,
-            settings=settings,
-            relaxed_attractor_structure=relaxed_attractor_structure
-        )
+        if requires_attractor_cleanup:
+            final_polaron_structure = self.remove_attractor_elements(
+                chosen_site_indices=chosen_site_indices,
+                settings=settings,
+                relaxed_attractor_structure=relaxed_intermediate_structure
+            )
+
+            settings_job2 = replace(settings, attractor_elements=None)
+        else:
+            final_polaron_structure = relaxed_intermediate_structure
+            settings_job2 = settings
 
         polaron_dir = root / "02_Final_Polaron_Run"
-        settings_job2 = replace(settings, attractor_elements=None)
 
         result_job2 = self._run_and_check_job(
             job_name="polaron",

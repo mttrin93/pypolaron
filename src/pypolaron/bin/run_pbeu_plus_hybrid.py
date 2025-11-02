@@ -2,7 +2,6 @@ import sys
 from pypolaron.cli.common_utils import build_common_parser, setup_cli_logging, load_structure, \
     validate_dft_input, map_args_to_dft_params, log, process_and_generate_candidates, \
     map_args_to_policy, run_sequential_relaxations_workflow
-from dataclasses import replace
 
 
 def main(args=None):
@@ -13,14 +12,6 @@ def main(args=None):
     parser = build_common_parser(
         prog_name="pypolaron-run-attractor",
         description="Toolkit for automated DFT polaron calculations."
-    )
-
-    parser.add_argument(
-        "-ae", "--attractor-elements",
-        type=str,
-        required=True,
-        help="Element symbol used to substitute the host atom to create the localized potential well."
-             "Provide either a single element symbol or a list of symbols. "
     )
 
     args_parse = parser.parse_args(args)
@@ -42,13 +33,10 @@ def main(args=None):
     workflow_policy = map_args_to_policy(args_parse)
 
     if dft_parameters.calc_type not in ["relax-atoms", "relax-all"]:
-        log.warning("The attractor method works only with either relax-atoms or relax-all. Exiting")
+        log.warning("The pbeu_plus_hybrid method works only with either relax-atoms or relax-all. Exiting")
 
-    new_attractor_value = args_parse.attractor_elements
-    dft_params_attractor = replace(
-        dft_parameters,
-        attractor_elements=new_attractor_value
-    )
+    if dft_parameters.functional not in ["hse06", "pbe0"]:
+        log.warning("The selected functional of the pbeu_plus_hybrid run must be hybrid. Exiting")
 
     # 4) candidates generation
     polaron_candidates, oxygen_vacancies_candidates, polaron_generator = process_and_generate_candidates(
@@ -63,9 +51,9 @@ def main(args=None):
         polaron_generator=polaron_generator,
         polaron_candidates=polaron_candidates,
         oxygen_vacancy_candidates=oxygen_vacancies_candidates,
-        dft_params=dft_params_attractor,
+        dft_params=dft_parameters,
         policy=workflow_policy,
-        relaxation_method="attractor",
+        relaxation_method="pbeu_plus_hybrid",
     )
 
     # log.info(f"Input files written to folder {dft_parameters.run_dir_root}")

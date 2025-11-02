@@ -1,7 +1,7 @@
 import argparse
 import logging
 import os
-from typing import List, Tuple, Union, Any, Optional, Dict
+from typing import List, Tuple, Union, Any, Optional, Dict, Literal
 from pathlib import Path
 import socket
 import getpass
@@ -494,12 +494,13 @@ def run_polaron_workflow(
 
     return report
 
-def run_attractor_workflow(
+def run_sequential_relaxations_workflow(
         polaron_generator: PolaronGenerator,
         polaron_candidates: List[Tuple[int, str, Optional[float], float, float]],
         oxygen_vacancy_candidates: List[Tuple[int, str, float]],
         dft_params: DftSettings,
         policy: WorkflowPolicy,
+        relaxation_method: Literal["attractor", "pbeu_plus_hybrid"],
 ):
     """
     Asks the user to select a candidate index to calculate and triggers file generation.
@@ -523,10 +524,11 @@ def run_attractor_workflow(
     )
 
     # Run the generation
-    report = workflow.run_attractor_workflow(
+    report = workflow.sequential_relaxations_workflow(
         chosen_site_indices=chosen_polaron_sites,
         chosen_vacancy_site_indices=chosen_oxygen_vacancy_sites,
         settings=dft_params,
+        method=relaxation_method,
     )
 
     return report

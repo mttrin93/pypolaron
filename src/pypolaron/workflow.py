@@ -89,7 +89,7 @@ class PolaronWorkflow:
                 #SBATCH -e ./job.err.%j
                 #SBATCH -D ./
                 #SBATCH -J pypolaron
-                #SBATCH --nodes=1
+                #SBATCH --nodes={self.policy.nnodes}
                 #SBATCH --ntasks-per-node={self.policy.ntasks}
                 #SBATCH --time={self.policy.walltime}\n
                 \n

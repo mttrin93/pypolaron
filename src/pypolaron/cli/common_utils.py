@@ -214,6 +214,13 @@ def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentPa
                                              "Settings for job scheduling, retries, and resources.")
 
     policy_group.add_argument(
+        "--nnodes",
+        type=int,
+        default=1,
+        help="Number of nodes. Default: 1."
+    )
+
+    policy_group.add_argument(
         "--ntasks",
         type=int,
         default=72,
@@ -362,6 +369,7 @@ def map_args_to_policy(args_parse: argparse.Namespace) -> WorkflowPolicy:
     """Maps parsed CLI arguments to the WorkflowPolicy dataclass."""
 
     policy_params = {
+        "nnodes": args_parse.nnodes,
         "ntasks": args_parse.ntasks,
         "walltime": args_parse.walltime,
         "scheduler": args_parse.scheduler,

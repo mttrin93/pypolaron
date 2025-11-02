@@ -164,6 +164,7 @@ class WorkflowPolicy:
     Configuration parameters defining the job execution policy for the PolaronWorkflow.
     """
     # Job Scheduler Parameters
+    nnodes: int = 1
     ntasks: int = 72
     walltime: str = "02:00:00"
     scheduler: str = "slurm"

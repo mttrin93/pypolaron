@@ -1,7 +1,7 @@
 import sys
 from pypolaron.cli.common_utils import build_common_parser, setup_cli_logging, load_structure, \
     validate_dft_input, map_args_to_dft_params, log, process_and_generate_candidates, \
-    run_attractor_workflow
+    run_attractor_workflow, map_args_to_policy
 from dataclasses import replace
 
 
@@ -39,6 +39,8 @@ def main(args=None):
         return
 
     dft_parameters = map_args_to_dft_params(args_parse)
+    workflow_policy = map_args_to_policy(args_parse)
+
     new_attractor_value = args_parse.attractor_elements
     dft_params_attractor = replace(
         dft_parameters,
@@ -58,7 +60,8 @@ def main(args=None):
         polaron_generator=polaron_generator,
         polaron_candidates=polaron_candidates,
         oxygen_vacancy_candidates=oxygen_vacancies_candidates,
-        dft_params=dft_params_attractor
+        dft_params=dft_params_attractor,
+        policy=workflow_policy,
     )
 
     # log.info(f"Input files written to folder {dft_parameters.run_dir_root}")

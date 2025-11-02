@@ -2,29 +2,16 @@ from pathlib import Path
 from typing import Dict, Tuple, Optional, Union, List, Any, Callable
 import textwrap
 import numpy as np
-import subprocess
+import logging
 import json
 import shutil
 from dataclasses import replace
 
 from pymatgen.core import Structure
 
-import logging
-import socket
-import getpass
-
 from pypolaron.polaron_generator import PolaronGenerator
 from pypolaron.polaron_analyzer import PolaronAnalyzer
-from pypolaron.utils import DftSettings, run_job_and_wait, read_final_geometry, is_job_completed
-
-
-# --- Global Setup ---
-hostname = socket.gethostname()
-username = getpass.getuser()
-
-LOG_FMT = '%(asctime)s %(levelname).1s - %(message)s'.format(hostname)
-logging.basicConfig(level=logging.INFO, format=LOG_FMT, datefmt="%Y/%m/%d %H:%M:%S")
-log = logging.getLogger('pypolaron')
+from pypolaron.utils import DftSettings, run_job_and_wait, read_final_geometry, is_job_completed, WorkflowPolicy
 
 
 # TODO: When seeding multiple polarons, be careful about total charge and spin multiplicity:
@@ -49,22 +36,41 @@ log = logging.getLogger('pypolaron')
 class PolaronWorkflow:
     def __init__(
         self,
+        generator: PolaronGenerator,
+        log: logging.Logger,
         aims_executable_command: str,
+        dft_code: str,
+        policy: WorkflowPolicy,
         epsilon: Optional[float] = None,
         fermi_energy: float = 0.0,
         volume_ang3: Optional[float] = None,
     ):
+        self.generator = generator
+        self.log = log
         self.aims_executable_command = aims_executable_command
+        self.dft_code = dft_code
         self.epsilon = epsilon
         self.fermi_energy = fermi_energy
         self.volume_ang3 = volume_ang3
+        self._configure_dft_io()
+        self.policy = policy
+
+    def _configure_dft_io(self):
+        """
+        Helper to set the correct writer and filenames based on dft_code.
+        """
+        if self.dft_code == "aims":
+            self.write_func = self.generator.write_fhi_aims_input_files
+            self.geometry_filenames = ("geometry.in", "geometry.in.next_step")
+        elif self.dft_code == "vasp":
+            self.write_func = self.generator.write_vasp_input_files
+            self.geometry_filenames = ("POSCAR", "CONTCAR")
+        else:
+            raise ValueError(f"Unknown DFT tool: {self.dft_code}. Must be 'aims' or 'vasp'.")
 
     def write_simple_job_script(
         self,
         workdir: Path,
-        ntasks: int = 72,
-        walltime: str = "02:00:00",
-        scheduler: str = "slurm",
     ) -> Path:
         """
         Write a simple shell script to run FHI-aims in 'workdir'.
@@ -75,7 +81,7 @@ class PolaronWorkflow:
         # workdir_p = Path(workdir)
         workdir.mkdir(parents=True, exist_ok=True)
         script_path = workdir / "run_aims.sh"
-        if scheduler == "slurm":
+        if self.policy.scheduler == "slurm":
             content = textwrap.dedent(
                 f"""\
                 #!/bin/bash -l
@@ -84,8 +90,8 @@ class PolaronWorkflow:
                 #SBATCH -D ./
                 #SBATCH -J pypolaron
                 #SBATCH --nodes=1
-                #SBATCH --ntasks-per-node={ntasks}
-                #SBATCH --time={walltime}\n
+                #SBATCH --ntasks-per-node={self.policy.ntasks}
+                #SBATCH --time={self.policy.walltime}\n
                 \n
                 \n
                 module purge
@@ -115,7 +121,6 @@ class PolaronWorkflow:
 
     def run_polaron_workflow(
         self,
-        generator: PolaronGenerator,
         chosen_site_indices: Union[int, List[int]],
         chosen_vacancy_site_indices: Union[int, List[int]],
         settings: DftSettings,
@@ -130,15 +135,6 @@ class PolaronWorkflow:
         root = Path(settings.run_dir_root)
         root.mkdir(parents=True, exist_ok=True)
 
-        if settings.dft_code == "aims":
-            write_func = generator.write_fhi_aims_input_files
-            geometry_filenames = ("geometry.in", "geometry.in.next_step")
-        elif settings.dft_code == "vasp":
-            write_func = generator.write_vasp_input_files
-            geometry_filenames = ("POSCAR", "CONTCAR")
-        else:
-            raise ValueError(f"Unknown DFT tool: {settings.dft_code}. Must be 'aims' or 'vasp'.")
-
         planned = {}
 
         if settings.run_pristine:
@@ -147,12 +143,10 @@ class PolaronWorkflow:
             result_pristine = self._run_and_check_job(
                 job_name="pristine",
                 job_dir=pristine_dir,
-                write_func=write_func,
                 settings=settings,
                 chosen_site_indices=[],
                 chosen_vacancy_site_indices=chosen_vacancy_site_indices,
                 is_charged_polaron_run=False,
-                geometry_filenames=geometry_filenames,
             )
 
             if "status" in result_pristine and result_pristine["submitted"] == True:
@@ -165,12 +159,10 @@ class PolaronWorkflow:
         result_charged = self._run_and_check_job(
             job_name="charged",
             job_dir=charged_dir,
-            write_func=write_func,
             settings=settings,
             chosen_site_indices=chosen_site_indices,
             chosen_vacancy_site_indices=chosen_vacancy_site_indices,
             is_charged_polaron_run=True,
-            geometry_filenames=geometry_filenames,
         )
 
         if "status" in result_charged and result_charged["submitted"] == True:
@@ -238,31 +230,31 @@ class PolaronWorkflow:
             geometry_filename: str,
             geometry_next_step_filename: str,
     ):
-        MAX_RETRIES = 3
+        MAX_RETRIES = self.policy.max_retries
         planned["submitted"] = True
         current_retries = 0
         job_status = "PENDING"
 
         while current_retries < MAX_RETRIES:
             if current_retries > 0:
-                log.info(f"Retrying job after TIMEOUT (Attempt {current_retries + 1}/{MAX_RETRIES}).")
+                self.log.info(f"Retrying job after TIMEOUT (Attempt {current_retries + 1}/{MAX_RETRIES}).")
 
             try:
-                job_status = run_job_and_wait(input_script)
+                job_status = run_job_and_wait(script_path=input_script, log=self.log)
             except RuntimeError as e:
                 planned["status"] = f"Job failed on attempt {current_retries + 1}. Fatal error: {e}"
                 return planned
                 # return {"planned": planned}
 
             if job_status == "COMPLETED":
-                log.info(f"Job completed successfully after {current_retries} retries.")
+                self.log.info(f"Job completed successfully after {current_retries} retries.")
                 break
             elif job_status == "TIMEOUT":
                 next_step_path = input_dir / geometry_next_step_filename
                 geometry_path = input_dir / geometry_filename
 
                 if next_step_path.exists():
-                    log.warning(
+                    self.log.warning(
                         f"TIMEOUT detected. Copying {geometry_next_step_filename} to "
                         f" {geometry_filename} for restart.")
                     shutil.copy2(next_step_path, geometry_path)
@@ -283,7 +275,6 @@ class PolaronWorkflow:
 
     def remove_attractor_elements(
             self,
-            generator: PolaronGenerator,
             chosen_site_indices: Union[int, List[int]],
             settings: DftSettings,
             relaxed_attractor_structure: Structure,
@@ -302,7 +293,7 @@ class PolaronWorkflow:
         indices_attractor = [index for index, site in enumerate(relaxed_attractor_structure) if
                              site.specie.symbol in elements_list]
 
-        chosen_sites_species = [generator.structure[index].specie for index in chosen_site_indices]
+        chosen_sites_species = [self.generator.structure[index].specie for index in chosen_site_indices]
         indices_original_elements = [chg_spec.element for chg_spec in chosen_sites_species]
         final_polaron_structure = relaxed_attractor_structure.copy()
 
@@ -315,21 +306,19 @@ class PolaronWorkflow:
             self,
             job_name: str,
             job_dir: Path,
-            write_func: Callable,
             settings: DftSettings,
             chosen_site_indices: Union[int, List[int]],
             chosen_vacancy_site_indices: Union[int, List[int]],
             is_charged_polaron_run: bool,
-            geometry_filenames: Tuple[str, str],  # (geometry_filename, geometry_next_step_filename)
             base_structure: Optional[Structure] = None,
     ) -> Dict[str, Union[str, float, bool]]:
         """Runs a single job, handles file writing, execution, and status check."""
 
         # job_dir.mkdir(parents=True, exist_ok=True)
-        geometry_filename, geometry_next_step_filename = geometry_filenames
+        geometry_filename, geometry_next_step_filename = self.geometry_filenames
 
         # 1. Write input files
-        write_func(
+        self.write_func(
             site_index=chosen_site_indices,
             vacancy_site_index=chosen_vacancy_site_indices,
             settings=settings,
@@ -361,7 +350,6 @@ class PolaronWorkflow:
 
     def run_attractor_workflow(
             self,
-            generator: PolaronGenerator,
             chosen_site_indices: Union[int, List[int]],
             chosen_vacancy_site_indices: Union[int, List[int]],
             settings: DftSettings,
@@ -378,15 +366,6 @@ class PolaronWorkflow:
         root = Path(settings.run_dir_root)
         root.mkdir(parents=True, exist_ok=True)
 
-        if settings.dft_code == "aims":
-            write_func = generator.write_fhi_aims_input_files
-            geometry_filenames = ("geometry.in", "geometry.in.next_step")
-        elif settings.dft_code == "vasp":
-            write_func = generator.write_vasp_input_files
-            geometry_filenames = ("POSCAR", "CONTCAR")
-        else:
-            raise ValueError(f"Unknown DFT tool: {settings.dft_code}. Must be 'aims' or 'vasp'.")
-
         planned = {}
 
         if settings.run_pristine:
@@ -395,12 +374,10 @@ class PolaronWorkflow:
             result_pristine = self._run_and_check_job(
                 job_name="pristine",
                 job_dir=pristine_dir,
-                write_func=write_func,
                 settings=settings,
                 chosen_site_indices=[],
                 chosen_vacancy_site_indices=chosen_vacancy_site_indices,
                 is_charged_polaron_run=False,
-                geometry_filenames=geometry_filenames,
             )
 
             if "status" in result_pristine and result_pristine["submitted"] == True:
@@ -414,12 +391,10 @@ class PolaronWorkflow:
             result_job1 = self._run_and_check_job(
                 job_name="attractor",
                 job_dir=attractor_dir,
-                write_func=write_func,
                 settings=settings,
                 chosen_site_indices=chosen_site_indices,
                 chosen_vacancy_site_indices=chosen_vacancy_site_indices,
                 is_charged_polaron_run=False,
-                geometry_filenames=geometry_filenames,
             )
 
             if "status" in result_job1 and result_job1["submitted"] == True:
@@ -427,13 +402,16 @@ class PolaronWorkflow:
 
             planned.update(result_job1)
 
-        relaxed_attractor_structure = read_final_geometry(settings.dft_code, attractor_dir)
+        relaxed_attractor_structure = read_final_geometry(
+            dft_code=settings.dft_code,
+            job_directory=attractor_dir,
+            log=self.log
+        )
         if relaxed_attractor_structure is None:
             planned["status"] = "Could not read relaxed geometry for Job 1"
             return {"planned": planned}
 
         final_polaron_structure = self.remove_attractor_elements(
-            generator=generator,
             chosen_site_indices=chosen_site_indices,
             settings=settings,
             relaxed_attractor_structure=relaxed_attractor_structure
@@ -445,12 +423,10 @@ class PolaronWorkflow:
         result_job2 = self._run_and_check_job(
             job_name="polaron",
             job_dir=polaron_dir,
-            write_func=write_func,
             settings=settings_job2,
             chosen_site_indices=chosen_site_indices,
             chosen_vacancy_site_indices=chosen_vacancy_site_indices,
             is_charged_polaron_run=True,
-            geometry_filenames=geometry_filenames,
             base_structure=final_polaron_structure,
         )
 

@@ -1,28 +1,22 @@
 import argparse
 import logging
 import os
-import socket
-import getpass
-import sys
 from typing import List, Tuple, Union, Any, Optional, Dict
 from pathlib import Path
+import socket
+import getpass
 
 from pymatgen.core.structure import Structure
 from pymatgen.ext.matproj import MPRester
 from pypolaron import __version__
 from pyfhiaims.geometry import AimsGeometry
-from pypolaron.utils import DftSettings
+from pypolaron.utils import DftSettings, setup_pypolaron_logger, WorkflowPolicy
 from pypolaron.workflow import PolaronWorkflow
 from pypolaron.polaron_generator import PolaronGenerator
 
-# --- Global Setup ---
 hostname = socket.gethostname()
 username = getpass.getuser()
-
-LOG_FMT = '%(asctime)s %(levelname).1s - %(message)s'.format(hostname)
-logging.basicConfig(level=logging.INFO, format=LOG_FMT, datefmt="%Y/%m/%d %H:%M:%S")
-log = logging.getLogger('pypolaron')
-
+log = setup_pypolaron_logger()
 
 def setup_cli_logging(args_parse: argparse.Namespace):
     """Sets up file logging based on CLI arguments."""
@@ -34,7 +28,8 @@ def setup_cli_logging(args_parse: argparse.Namespace):
     Path(args_parse.run_dir_root).mkdir(parents=True, exist_ok=True)
 
     file_handler = logging.FileHandler(log_file_name_path, 'a')
-    formatter = logging.Formatter(LOG_FMT)
+    formatter = log.handlers[0].formatter if log.handlers else logging.Formatter()
+    # formatter = logging.Formatter(log_formatter)
     file_handler.setFormatter(formatter)
 
     # Only add the handler if it's not already there (prevents duplication on multiple runs)
@@ -215,6 +210,38 @@ def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentPa
              " energy calculations. Default is false.",
     )
 
+    policy_group = parser.add_argument_group("Execution Policy",
+                                             "Settings for job scheduling, retries, and resources.")
+
+    policy_group.add_argument(
+        "--ntasks",
+        type=int,
+        default=72,
+        help="Number of tasks (cores) per node for job scripts. Default: 72."
+    )
+
+    policy_group.add_argument(
+        "--walltime",
+        type=str,
+        default="02:00:00",
+        help="Walltime limit for job scripts (e.g., HH:MM:SS). Default: 02:00:00."
+    )
+
+    policy_group.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="Maximum number of retries for TIMEOUT jobs. Default: 3."
+    )
+
+    policy_group.add_argument(
+        "--scheduler",
+        type=str,
+        choices=['slurm', 'local'],
+        default="slurm",
+        help="Job scheduler to use ('slurm' or 'local' bash execution). Default: slurm."
+    )
+
     return parser
 
 
@@ -330,6 +357,19 @@ def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftSettings:
     }
     return DftSettings(**dft_parameters)
 
+
+def map_args_to_policy(args_parse: argparse.Namespace) -> WorkflowPolicy:
+    """Maps parsed CLI arguments to the WorkflowPolicy dataclass."""
+
+    policy_params = {
+        "ntasks": args_parse.ntasks,
+        "walltime": args_parse.walltime,
+        "scheduler": args_parse.scheduler,
+        "max_retries": args_parse.max_retries,
+    }
+
+    return WorkflowPolicy(**policy_params)
+
 def display_candidates(candidates: List[Any], title: str):
     """Prints the ranked list of candidates in a readable format."""
     if not candidates:
@@ -421,7 +461,8 @@ def run_polaron_workflow(
         polaron_generator: PolaronGenerator,
         polaron_candidates: List[Tuple[int, str, Optional[float], float, float]],
         oxygen_vacancy_candidates: List[Tuple[int, str, float]],
-        dft_params: DftSettings
+        dft_params: DftSettings,
+        policy: WorkflowPolicy,
 ):
     """
     Asks the user to select a candidate index to calculate and triggers file generation.
@@ -436,11 +477,16 @@ def run_polaron_workflow(
     chosen_oxygen_vacancy_sites = [value[0] for value in oxygen_vacancy_candidates]
 
     # Initialize Workflow
-    workflow = PolaronWorkflow(aims_executable_command=dft_params.aims_command)
+    workflow = PolaronWorkflow(
+        generator=polaron_generator,
+        aims_executable_command=dft_params.aims_command,
+        dft_code=dft_params.dft_code,
+        policy=policy,
+        log=log,
+    )
 
     # Run the generation
     report = workflow.run_polaron_workflow(
-        generator=polaron_generator,
         chosen_site_indices=chosen_polaron_sites,
         chosen_vacancy_site_indices=chosen_oxygen_vacancy_sites,
         settings=dft_params,
@@ -452,7 +498,8 @@ def run_attractor_workflow(
         polaron_generator: PolaronGenerator,
         polaron_candidates: List[Tuple[int, str, Optional[float], float, float]],
         oxygen_vacancy_candidates: List[Tuple[int, str, float]],
-        dft_params: DftSettings
+        dft_params: DftSettings,
+        policy: WorkflowPolicy,
 ):
     """
     Asks the user to select a candidate index to calculate and triggers file generation.
@@ -467,11 +514,16 @@ def run_attractor_workflow(
     chosen_oxygen_vacancy_sites = [value[0] for value in oxygen_vacancy_candidates]
 
     # Initialize Workflow
-    workflow = PolaronWorkflow(aims_executable_command=dft_params.aims_command)
+    workflow = PolaronWorkflow(
+        generator=polaron_generator,
+        aims_executable_command=dft_params.aims_command,
+        dft_code=dft_params.dft_code,
+        policy=policy,
+        log=log,
+    )
 
     # Run the generation
     report = workflow.run_attractor_workflow(
-        generator=polaron_generator,
         chosen_site_indices=chosen_polaron_sites,
         chosen_vacancy_site_indices=chosen_oxygen_vacancy_sites,
         settings=dft_params,

@@ -12,14 +12,27 @@ from pyfhiaims.geometry import AimsGeometry
 from pathlib import Path
 from dataclasses import dataclass, field
 
-# --- Global Setup ---
-hostname = socket.gethostname()
-username = getpass.getuser()
 
-LOG_FMT = '%(asctime)s %(levelname).1s - %(message)s'.format(hostname)
-logging.basicConfig(level=logging.INFO, format=LOG_FMT, datefmt="%Y/%m/%d %H:%M:%S")
-log = logging.getLogger('pypolaron')
 
+def setup_pypolaron_logger(
+    name: str = 'pypolaron',
+    level: int = logging.INFO,
+    format_str: Optional[str] = None
+) -> logging.Logger:
+    hostname = socket.gethostname()
+    if format_str is None:
+        log_format = f'%(asctime)s %(levelname).1s - ({hostname}) - %(message)s'
+    else:
+        log_format = format_str
+
+    if not logging.getLogger(name).handlers:
+        logging.basicConfig(
+            level=level,
+            format=log_format,
+            datefmt="%Y/%m/%d %H:%M:%S"
+        )
+
+    return logging.getLogger(name)
 
 def plot_site_occupations(
     atomic_positions: np.ndarray,
@@ -145,6 +158,19 @@ class DftSettings:
     attractor_elements: Optional[Union[str, List[str]]] = None
     aims_command: str = None
 
+@dataclass(frozen=True)  # frozen=True makes the policy immutable, which is ideal
+class WorkflowPolicy:
+    """
+    Configuration parameters defining the job execution policy for the PolaronWorkflow.
+    """
+    # Job Scheduler Parameters
+    ntasks: int = 72
+    walltime: str = "02:00:00"
+    scheduler: str = "slurm"
+
+    # Rerun/Stability Policy
+    max_retries: int = 3
+
 def generate_occupation_matrix_content(
         scell: Structure, polaron_indices: List[int]
 ) -> str:
@@ -216,8 +242,11 @@ def create_attractor_structure(
 
     return attractor_structure
 
-def run_job_and_wait(script_path: Path,
-                     scheduler: str = "slurm"):
+def run_job_and_wait(
+        script_path: Path,
+        log: logging.Logger,
+        scheduler: str = "slurm",
+):
     """
     Executes a job submission script and waits synchronously for its completion.
 
@@ -320,7 +349,11 @@ def run_job_and_wait(script_path: Path,
             output_message = e.output.strip() if e.output else "No output captured."
             raise RuntimeError(f"Local job failed for {script_path.parent.name}. Output: {output_message}")
 
-def read_final_geometry(dft_code: str, job_directory: Path) -> Optional[Structure]:
+def read_final_geometry(
+        dft_code: str,
+        job_directory: Path,
+        log: logging.Logger,
+) -> Optional[Structure]:
     """
     Reads the final relaxed structure from a completed DFT job directory.
     """

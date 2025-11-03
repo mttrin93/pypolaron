@@ -28,8 +28,8 @@ def setup_cli_logging(args_parse: argparse.Namespace):
     Path(args_parse.run_dir_root).mkdir(parents=True, exist_ok=True)
 
     file_handler = logging.FileHandler(log_file_name_path, 'a')
-    formatter = log.handlers[0].formatter if log.handlers else logging.Formatter()
-    # formatter = logging.Formatter(log_formatter)
+    log_formatter = f'%(asctime)s %(levelname).1s - ({hostname}) - %(message)s'
+    formatter = logging.Formatter(log_formatter)
     file_handler.setFormatter(formatter)
 
     # Only add the handler if it's not already there (prevents duplication on multiple runs)
@@ -255,6 +255,8 @@ def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentPa
         default="mpirun -np 8 aims.x",
         help="Full command to execute FHI-aims (used in job bin)."
     )
+
+    # TODO: add parsing YAML file for policy settings
 
     return parser
 

@@ -498,7 +498,7 @@ class PolaronGenerator:
         }
 
         if settings.fixed_spin_moment is not None:
-            params["fix_spin_moment"] = settings.fixed_spin_moment
+            params["fixed_spin_moment"] = settings.fixed_spin_moment
 
         if not settings.disable_elsi_restart:
             params.update({

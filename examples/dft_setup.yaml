@@ -2,17 +2,17 @@
 
 # Core DFT Settings
 dft_code: aims    #'vasp' or 'aims'
-xc_functional: hse06    #'pbe', 'pbeu', 'hse06', 'pbe0'
+functional: pbe0    #'pbe', 'pbeu', 'hse06', 'pbe0'
 calc_type: relax-atoms    #'scf', 'relax-atoms', 'relax-all'
 species_dir: /u/mrinaldi/program/fhiaims/polaron/species_defaults/defaults_2020/light
 
 # Structural/Defect Generation
-supercell: [2, 2, 2]
+supercell: [1, 1, 1]
 
 # Spin/U/Hybrid Parameters
 spin_moment: 1.0
 hubbard_parameters: "Ti:3d:4.5"  #element:orbital:U string (e.g., 'Ti:3d:2.65,Fe:3d:4.0')
-alpha: 0.25 # Example hybrid functional change
-set_site_magmoms: True
+alpha: 0.25
+set_site_magmoms: False
 fixed_spin_moment: 1.0
 disable_elsi_restart: False

@@ -82,22 +82,20 @@ class PolaronWorkflow:
         if self.policy.scheduler == "slurm":
             content = textwrap.dedent(
                 f"""\
-                #!/bin/bash -l
-                #SBATCH -o ./job.out.%j
-                #SBATCH -e ./job.err.%j
-                #SBATCH -D ./
-                #SBATCH -J pypolaron
-                #SBATCH --nodes={self.policy.nnodes}
-                #SBATCH --ntasks-per-node={self.policy.ntasks}
-                #SBATCH --time={self.policy.walltime}
-                \n
-                \n
-                {self.policy.environment_setup}
-                \n
-                \n
-                cd {workdir} 
-                {self.policy.aims_command} > aims.out
-            """
+#!/bin/bash -l
+#SBATCH -o ./job.out.%j
+#SBATCH -e ./job.err.%j
+#SBATCH -D ./
+#SBATCH -J pypolaron
+#SBATCH --nodes={self.policy.nnodes}
+#SBATCH --ntasks-per-node={self.policy.ntasks}
+#SBATCH --time={self.policy.walltime}
+
+{self.policy.environment_setup}
+
+cd {workdir} 
+{self.policy.aims_command} > aims.out
+"""
             )
         else:
             content = textwrap.dedent(

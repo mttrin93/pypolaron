@@ -215,56 +215,6 @@ def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentPa
         help="Path to a YAML file containing workflow execution policy settings."
     )
 
-    # policy_group.add_argument(
-    #     "--nnodes",
-    #     type=int,
-    #     default=1,
-    #     help="Number of nodes. Default: 1."
-    # )
-    #
-    # policy_group.add_argument(
-    #     "--ntasks",
-    #     type=int,
-    #     default=72,
-    #     help="Number of tasks (cores) per node for job scripts. Default: 72."
-    # )
-    #
-    # policy_group.add_argument(
-    #     "--walltime",
-    #     type=str,
-    #     default="02:00:00",
-    #     help="Walltime limit for job scripts (e.g., HH:MM:SS). Default: 02:00:00."
-    # )
-    #
-    # policy_group.add_argument(
-    #     "--max-retries",
-    #     type=int,
-    #     default=3,
-    #     help="Maximum number of retries for TIMEOUT jobs. Default: 3."
-    # )
-    #
-    # policy_group.add_argument(
-    #     "--scheduler",
-    #     type=str,
-    #     choices=['slurm', 'local'],
-    #     default="slurm",
-    #     help="Job scheduler to use ('slurm' or 'local' bash execution). Default: slurm."
-    # )
-    #
-    # policy_group.add_argument(
-    #     "--env-setup",
-    #     type=str,
-    #     default=None,
-    #     help="Optional: Override the default module load/export commands as a raw string or path to a file."
-    # )
-    #
-    # policy_group.add_argument(
-    #     "-ac", "--aims-command",
-    #     type=str,
-    #     default="mpirun -np 8 aims.x",
-    #     help="Full command to execute FHI-aims (used in job bin)."
-    # )
-
     return parser
 
 
@@ -378,28 +328,6 @@ def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftSettings:
         # "attractor_elements": args_parse.attractor_elements,
     }
     return DftSettings(**dft_parameters)
-
-
-def map_args_to_policy(args_parse: argparse.Namespace) -> WorkflowPolicy:
-    """Maps parsed CLI arguments to the WorkflowPolicy dataclass."""
-
-    env_setup_str = args_parse.env_setup
-
-    if env_setup_str:
-        if Path(env_setup_str).is_file():
-            env_setup_str = Path(env_setup_str).read_text()
-
-    policy_params = {
-        "nnodes": args_parse.nnodes,
-        "environment_setup": env_setup_str if env_setup_str else WorkflowPolicy.environment_setup,
-        "ntasks": args_parse.ntasks,
-        "walltime": args_parse.walltime,
-        "scheduler": args_parse.scheduler,
-        "max_retries": args_parse.max_retries,
-        "aims_command": args_parse.aims_command,
-    }
-
-    return WorkflowPolicy(**policy_params)
 
 def load_workflow_policy(policy_file: Optional[Union[str, Path]] = None) -> WorkflowPolicy:
     """

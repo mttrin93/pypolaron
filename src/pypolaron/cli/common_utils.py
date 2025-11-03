@@ -80,6 +80,28 @@ def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentPa
     )
 
     parser.add_argument(
+        "-rdr", "--run-dir-root",
+        type=str,
+        default="polaron_runs",
+        help="Root directory for output calculations. Default is ./polaron_runs")
+
+    parser.add_argument(
+        "-ds", "--do-submit",
+        action="store_true",
+        default=False,
+        help="If set, job scripts are submitted to the cluster immediately (placeholder logic)."
+             "Default is false. "
+    )
+
+    parser.add_argument(
+        "-rp", "--run-pristine",
+        action="store_true",
+        default=False,
+        help="A calculation will run for the pristine structure. This is needed for formation "
+             " energy calculations. Default is false.",
+    )
+
+    parser.add_argument(
         "-pt", "--polaron-type",
         type=str,
         default='electron',
@@ -103,107 +125,94 @@ def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentPa
     )
 
     parser.add_argument(
-        "-s", "--supercell-dims",
-        type=int,
-        nargs=3,
-        default=(2, 2, 2),
-        help="Supercell dimensions (a, b, c) as three space-separated integers. Default is (2, 2, 2)",
-    )
-
-    parser.add_argument(
-        "-dc", "--dft-code",
+        "-scf", "--setup-config-file",
         type=str,
-        choices=['vasp', 'aims'],
-        default="aims",
-        help="DFT code to use: 'vasp' or 'aims'. Default is aims.",
+        required=True,
+        help="Path to the YAML file containing all DFT and defect generation settings.",
     )
 
-    parser.add_argument(
-        "-xf", "--xc-functional",
-        type=str,
-        default='hse06',
-        help="DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06', 'pbe0'). Default is hse06.",
-    )
 
-    parser.add_argument(
-        "-hp", "--hubbard-parameters",
-        type=str,
-        help="Specify Hubbard parameters as a element:orbital:U string (e.g., 'Ti:3d:2.65,Fe:3d:4.0')",
-    )
 
-    parser.add_argument(
-        "-fsp", "--fix-spin-moment",
-        type=float,
-        default=None,
-        help="Specify fixed_spin_moment for FHI-aims calculation, that allows to enforce fixed overall spin "
-             "moment."
-    )
-
-    parser.add_argument(
-        "-der", "--disable-elsi-restart",
-        action="store_true",
-        default=False,
-        help="If set, elsi_restart and elsi_restart_use_overlap will not be used. Its used is recommended. It"
-             "will be disabled when switching to other type of functional "
-    )
-
-    parser.add_argument(
-        "-a", "--alpha",
-        type=float,
-        default=0.25,
-        help="Fraction of exact exchange (alpha) for hybrid functionals (HSE06/PBE0). Defaults to 0.25."
-    )
-
-    parser.add_argument(
-        "-ct", "--calc-type",
-        type=str,
-        choices=['scf', 'relax-atoms', 'relax-all'],
-        default='relax-atoms',
-        help="Calculation type: 'scf' (static), 'relax-atoms' (ions only), or 'relax-all' (ions and cell)."
-             "Default is relax-atoms. ",
-    )
-
-    parser.add_argument(
-        "-sm", "--spin-moment",
-        type=float,
-        default=1.0,
-        help="Initial magnetic moment to set on the polaron site(s) for spin seeding. Default is 1.0",
-    )
-
-    parser.add_argument(
-        "-ssm", "--set-site-magmoms",
-        action="store_true",
-        default=False,
-        help="Set initial magnetic moment on the polaron site(s) for spin seeding. Default is false.",
-    )
-
-    parser.add_argument(
-        "-sd", "--species-dir",
-        type=str,
-        help="Directory containing FHI-aims species files."
-    )
-
-    parser.add_argument(
-        "-rdr", "--run-dir-root",
-        type=str,
-        default="polaron_runs",
-        help="Root directory for output calculations. Default is ./polaron_runs")
-
-    parser.add_argument(
-        "-ds", "--do-submit",
-        action="store_true",
-        default=False,
-        help="If set, job scripts are submitted to the cluster immediately (placeholder logic)."
-             "Default is false. "
-    )
-
-    parser.add_argument(
-        "-rp", "--run-pristine",
-        action="store_true",
-        default=False,
-        help="A calculation will run for the pristine structure. This is needed for formation "
-             " energy calculations. Default is false.",
-    )
+    # parser.add_argument(
+    #     "-s", "--supercell-dims",
+    #     type=int,
+    #     nargs=3,
+    #     default=(2, 2, 2),
+    #     help="Supercell dimensions (a, b, c) as three space-separated integers. Default is (2, 2, 2)",
+    # )
+    #
+    # parser.add_argument(
+    #     "-dc", "--dft-code",
+    #     type=str,
+    #     choices=['vasp', 'aims'],
+    #     default="aims",
+    #     help="DFT code to use: 'vasp' or 'aims'. Default is aims.",
+    # )
+    #
+    # parser.add_argument(
+    #     "-xf", "--xc-functional",
+    #     type=str,
+    #     default='hse06',
+    #     help="DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06', 'pbe0'). Default is hse06.",
+    # )
+    #
+    # parser.add_argument(
+    #     "-hp", "--hubbard-parameters",
+    #     type=str,
+    #     help="Specify Hubbard parameters as a element:orbital:U string (e.g., 'Ti:3d:2.65,Fe:3d:4.0')",
+    # )
+    #
+    # parser.add_argument(
+    #     "-fsp", "--fix-spin-moment",
+    #     type=float,
+    #     default=None,
+    #     help="Specify fixed_spin_moment for FHI-aims calculation, that allows to enforce fixed overall spin "
+    #          "moment."
+    # )
+    #
+    # parser.add_argument(
+    #     "-der", "--disable-elsi-restart",
+    #     action="store_true",
+    #     default=False,
+    #     help="If set, elsi_restart and elsi_restart_use_overlap will not be used. Its used is recommended. It"
+    #          "will be disabled when switching to other type of functional "
+    # )
+    #
+    # parser.add_argument(
+    #     "-a", "--alpha",
+    #     type=float,
+    #     default=0.25,
+    #     help="Fraction of exact exchange (alpha) for hybrid functionals (HSE06/PBE0). Defaults to 0.25."
+    # )
+    #
+    # parser.add_argument(
+    #     "-ct", "--calc-type",
+    #     type=str,
+    #     choices=['scf', 'relax-atoms', 'relax-all'],
+    #     default='relax-atoms',
+    #     help="Calculation type: 'scf' (static), 'relax-atoms' (ions only), or 'relax-all' (ions and cell)."
+    #          "Default is relax-atoms. ",
+    # )
+    #
+    # parser.add_argument(
+    #     "-sm", "--spin-moment",
+    #     type=float,
+    #     default=1.0,
+    #     help="Initial magnetic moment to set on the polaron site(s) for spin seeding. Default is 1.0",
+    # )
+    #
+    # parser.add_argument(
+    #     "-ssm", "--set-site-magmoms",
+    #     action="store_true",
+    #     default=False,
+    #     help="Set initial magnetic moment on the polaron site(s) for spin seeding. Default is false.",
+    # )
+    #
+    # parser.add_argument(
+    #     "-sd", "--species-dir",
+    #     type=str,
+    #     help="Directory containing FHI-aims species files."
+    # )
 
     policy_group = parser.add_argument_group("Execution Policy",
                                              "Settings for job scheduling, retries, and resources.")
@@ -306,53 +315,100 @@ def validate_dft_input(args_parse: argparse.Namespace) -> bool:
 
     return True
 
+# def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftSettings:
+#     """Maps parsed arguments to the DftParameters TypedDict structure."""
+#
+#     # NOTE: The keys must match the TypedDict definition (DftParameters)
+#     dft_parameters = {
+#         "dft_code": args_parse.dft_code,
+#         "functional": args_parse.xc_functional,
+#         "calc_type": args_parse.calc_type,
+#         "supercell": args_parse.supercell_dims,
+#         "species_dir": args_parse.species_dir,
+#         "run_dir_root": args_parse.run_dir_root,
+#         "do_submit": args_parse.do_submit,
+#         "set_site_magmoms": args_parse.set_site_magmoms,
+#         "spin_moment": args_parse.spin_moment,
+#         "run_pristine": args_parse.run_pristine,
+#         "alpha": args_parse.alpha,
+#         "hubbard_parameters": args_parse.hubbard_parameters,
+#         "fix_spin_moment": args_parse.fix_spin_moment,
+#         "disable_elsi_restart": args_parse.disable_elsi_restart,
+#         # "attractor_elements": args_parse.attractor_elements,
+#     }
+#     return DftSettings(**dft_parameters)
+
 def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftSettings:
-    """Maps parsed arguments to the DftParameters TypedDict structure."""
+    """
+    Loads DftSettings from YAML and applies final CLI overrides
+    for run directory and submission.
+    """
 
-    # NOTE: The keys must match the TypedDict definition (DftParameters)
-    dft_parameters = {
-        "dft_code": args_parse.dft_code,
-        "functional": args_parse.xc_functional,
-        "calc_type": args_parse.calc_type,
-        "supercell": args_parse.supercell_dims,
-        "species_dir": args_parse.species_dir,
-        "run_dir_root": args_parse.run_dir_root,
-        "do_submit": args_parse.do_submit,
-        "set_site_magmoms": args_parse.set_site_magmoms,
-        "spin_moment": args_parse.spin_moment,
-        "run_pristine": args_parse.run_pristine,
-        "alpha": args_parse.alpha,
-        "hubbard_parameters": args_parse.hubbard_parameters,
-        "fix_spin_moment": args_parse.fix_spin_moment,
-        "disable_elsi_restart": args_parse.disable_elsi_restart,
-        # "attractor_elements": args_parse.attractor_elements,
-    }
-    return DftSettings(**dft_parameters)
+    dft_settings_dict = load_dft_settings_from_yaml(args_parse.setup_config_file)
 
-def load_workflow_policy(policy_file: Optional[Union[str, Path]] = None) -> WorkflowPolicy:
+    if args_parse.run_dir_root:
+        dft_settings_dict['run_dir_root'] = args_parse.run_dir_root
+
+    if args_parse.do_submit:
+        dft_settings_dict['do_submit'] = args_parse.do_submit
+
+    if args_parse.run_pristine:
+        dft_settings_dict['run_pristine'] = args_parse.run_pristine
+
+    return DftSettings(**dft_settings_dict)
+
+def load_workflow_policy_from_yaml(
+        policy_file: Union[str, Path]
+) -> WorkflowPolicy:
     """
     Loads execution policy settings from a YAML file, merging them with defaults.
     """
     policy_dict = asdict(WorkflowPolicy())
 
-    if policy_file:
-        policy_path = Path(policy_file)
-        if not policy_path.is_file():
-            raise FileNotFoundError(f"Policy file not found: {policy_file}")
+    policy_path = Path(policy_file)
+    if not policy_path.is_file():
+        raise FileNotFoundError(f"Policy file not found: {policy_file}")
 
-        try:
-            with open(policy_path, 'r') as f:
-                user_settings = yaml.safe_load(f)
+    try:
+        with open(policy_path, 'r') as f:
+            user_settings = yaml.safe_load(f)
 
-            if user_settings:
-                for key, value in user_settings.items():
-                    if key in policy_dict:
-                        policy_dict[key] = value
+        if user_settings:
+            for key, value in user_settings.items():
+                if key in policy_dict:
+                    policy_dict[key] = value
 
-        except yaml.YAMLError as e:
-            raise ValueError(f"Error parsing YAML policy file {policy_file}: {e}")
+    except yaml.YAMLError as e:
+        raise ValueError(f"Error parsing YAML policy file {policy_file}: {e}")
 
     return WorkflowPolicy(**policy_dict)
+
+def load_dft_settings_from_yaml(
+        dft_settings_file_path: Union[str, Path]
+) -> Dict[str, Any]:
+    """Loads DFT settings from YAML, checking against known DftSettings fields."""
+    dft_settings_dict = asdict(DftSettings())
+
+    yaml_path = Path(dft_settings_file_path)
+    if not yaml_path.is_file():
+        raise FileNotFoundError(f"DFT config file not found: {dft_settings_file_path}")
+
+    try:
+        with open(yaml_path, 'r') as f:
+            user_settings = yaml.safe_load(f)
+
+        if user_settings:
+            for key, value in user_settings.items():
+                if key in dft_settings_dict:
+                    # Handle tuple conversion for supercell if necessary
+                    if key == 'supercell' and isinstance(value, list):
+                        dft_settings_dict[key] = tuple(value)
+                    else:
+                        dft_settings_dict[key] = value
+    except yaml.YAMLError as e:
+        raise ValueError(f"Error parsing YAML policy file {dft_settings_file_path}: {e}")
+
+    return dft_settings_dict
 
 def display_candidates(candidates: List[Any], title: str):
     """Prints the ranked list of candidates in a readable format."""

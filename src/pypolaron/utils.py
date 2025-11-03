@@ -145,7 +145,7 @@ class DftSettings:
     set_site_magmoms: bool = False
     alpha: float = 0.25
     hubbard_parameters: Optional[str] = None
-    fix_spin_moment: Optional[float] = None
+    fixed_spin_moment: Optional[float] = None
     disable_elsi_restart: bool = False
 
     # Analysis Parameters

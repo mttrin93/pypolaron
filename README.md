@@ -92,22 +92,14 @@ this to run workflows starting from a local structure.
 
 * `-mak, --mp-api-key`: Materials Project API Key.
 
-* `-dc, --dft-code`: choose the DFT backend (`vasp` or `aims`).
+* `-l, --log`: set a log filename.
 
-* `-xf, --xc-functional`: DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06', 'pbe0').
+* `-rdr, --run-dir-root`: root path where workflow run directories are created.
 
-* `-hp, --hubbard-parameters`: Specify Hubbard parameters as a element:orbital:U string 
-(e.g., 'Ti:3d:2.65,Fe:3d:4.0')
+* `-ds, --do-submit`: enable submission of generated job scripts to the scheduler immediately.
 
-* `-fsp, --fix-spin-moment`: Specify fixed_spin_moment for FHI-aims calculation, that allows to 
-enforce fixed overall spin moment.
-
-*  `-der, --disable-elsi-restart`: If set, elsi_restart and elsi_restart_use_overlap will not 
-be used. Its used is recommended.  
-  
-* `-a, --alpha ALPHA`: Fraction of exact exchange (alpha) for hybrid functionals (HSE06/PBE0).
-
-* `-ct, --calc-type`: calculation type: `scf`, `relax-atoms`, or `relax-all`.
+* `-rp, --run-pristine`: run the pristine (undefected) structure, useful for formation 
+energy references.
 
 * `-pt, --polaron-type`: electron or hole.
 
@@ -115,21 +107,7 @@ be used. Its used is recommended.
 
 * `-ovn, --oxygen-vacancy-number`: number of oxygen vacancies to create.
 
-* `-s, --supercell-dims`: three integers for supercell replication, e.g. `-s 2 2 2`.
-
-* `-sm, --spin-moment` and `-ssm, --set-site-magmoms`: seed initial magnetic moments on 
-the target site(s) to favour localisation.
-
-* `-rdr, --run-dir-root`: root path where workflow run directories are created.
-
-* `-ds, --do-submit`: enable submission of generated job scripts to the scheduler immediately.
-
-* `-sd, --species-dir`: AIMS-specific settings required when using `--dft-code aims`.
-
-* `-l, --log`: set a log filename.
-
-* `-rp, --run-pristine`: run the pristine (undefected) structure, useful for formation 
-energy references.
+* `-scf, --setup-config-file`: path to the YAML file containing all DFT and defect generation settings.
 
 * `-pf, --policy-file`: path to a YAML file containing workflow execution policy settings.
 
@@ -142,9 +120,9 @@ structure fetched from Materials Project, would be:
 run_generator \
   -mq MgO \
   -mak ID \
-  -sd /path/to/species \
   -rdr ./workdir \
-  -ds
+  -ds \
+  -scf /path/to/examples/dft_setup.yaml \
   -pf /path/to/examples/policy.yaml
  ```
 

@@ -14,5 +14,5 @@ spin_moment: 1.0
 hubbard_parameters: "Ti:3d:4.5"  #element:orbital:U string (e.g., 'Ti:3d:2.65,Fe:3d:4.0')
 alpha: 0.25
 set_site_magmoms: False
-fixed_spin_moment: 1.0
+#fixed_spin_moment: 1.0
 disable_elsi_restart: False

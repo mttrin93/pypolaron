@@ -131,93 +131,7 @@ def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentPa
         help="Path to the YAML file containing all DFT and defect generation settings.",
     )
 
-
-
-    # parser.add_argument(
-    #     "-s", "--supercell-dims",
-    #     type=int,
-    #     nargs=3,
-    #     default=(2, 2, 2),
-    #     help="Supercell dimensions (a, b, c) as three space-separated integers. Default is (2, 2, 2)",
-    # )
-    #
-    # parser.add_argument(
-    #     "-dc", "--dft-code",
-    #     type=str,
-    #     choices=['vasp', 'aims'],
-    #     default="aims",
-    #     help="DFT code to use: 'vasp' or 'aims'. Default is aims.",
-    # )
-    #
-    # parser.add_argument(
-    #     "-xf", "--xc-functional",
-    #     type=str,
-    #     default='hse06',
-    #     help="DFT functional to use (e.g., 'pbe', 'pbeu', 'hse06', 'pbe0'). Default is hse06.",
-    # )
-    #
-    # parser.add_argument(
-    #     "-hp", "--hubbard-parameters",
-    #     type=str,
-    #     help="Specify Hubbard parameters as a element:orbital:U string (e.g., 'Ti:3d:2.65,Fe:3d:4.0')",
-    # )
-    #
-    # parser.add_argument(
-    #     "-fsp", "--fix-spin-moment",
-    #     type=float,
-    #     default=None,
-    #     help="Specify fixed_spin_moment for FHI-aims calculation, that allows to enforce fixed overall spin "
-    #          "moment."
-    # )
-    #
-    # parser.add_argument(
-    #     "-der", "--disable-elsi-restart",
-    #     action="store_true",
-    #     default=False,
-    #     help="If set, elsi_restart and elsi_restart_use_overlap will not be used. Its used is recommended. It"
-    #          "will be disabled when switching to other type of functional "
-    # )
-    #
-    # parser.add_argument(
-    #     "-a", "--alpha",
-    #     type=float,
-    #     default=0.25,
-    #     help="Fraction of exact exchange (alpha) for hybrid functionals (HSE06/PBE0). Defaults to 0.25."
-    # )
-    #
-    # parser.add_argument(
-    #     "-ct", "--calc-type",
-    #     type=str,
-    #     choices=['scf', 'relax-atoms', 'relax-all'],
-    #     default='relax-atoms',
-    #     help="Calculation type: 'scf' (static), 'relax-atoms' (ions only), or 'relax-all' (ions and cell)."
-    #          "Default is relax-atoms. ",
-    # )
-    #
-    # parser.add_argument(
-    #     "-sm", "--spin-moment",
-    #     type=float,
-    #     default=1.0,
-    #     help="Initial magnetic moment to set on the polaron site(s) for spin seeding. Default is 1.0",
-    # )
-    #
-    # parser.add_argument(
-    #     "-ssm", "--set-site-magmoms",
-    #     action="store_true",
-    #     default=False,
-    #     help="Set initial magnetic moment on the polaron site(s) for spin seeding. Default is false.",
-    # )
-    #
-    # parser.add_argument(
-    #     "-sd", "--species-dir",
-    #     type=str,
-    #     help="Directory containing FHI-aims species files."
-    # )
-
-    policy_group = parser.add_argument_group("Execution Policy",
-                                             "Settings for job scheduling, retries, and resources.")
-
-    policy_group.add_argument(
+    parser.add_argument(
         "-pf", "--policy-file",
         type=str,
         default=None,
@@ -314,29 +228,6 @@ def validate_dft_input(arg_parse : argparse.Namespace, dft_parameters: DftSettin
         return False
 
     return True
-
-# def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftSettings:
-#     """Maps parsed arguments to the DftParameters TypedDict structure."""
-#
-#     # NOTE: The keys must match the TypedDict definition (DftParameters)
-#     dft_parameters = {
-#         "dft_code": args_parse.dft_code,
-#         "functional": args_parse.xc_functional,
-#         "calc_type": args_parse.calc_type,
-#         "supercell": args_parse.supercell_dims,
-#         "species_dir": args_parse.species_dir,
-#         "run_dir_root": args_parse.run_dir_root,
-#         "do_submit": args_parse.do_submit,
-#         "set_site_magmoms": args_parse.set_site_magmoms,
-#         "spin_moment": args_parse.spin_moment,
-#         "run_pristine": args_parse.run_pristine,
-#         "alpha": args_parse.alpha,
-#         "hubbard_parameters": args_parse.hubbard_parameters,
-#         "fix_spin_moment": args_parse.fix_spin_moment,
-#         "disable_elsi_restart": args_parse.disable_elsi_restart,
-#         # "attractor_elements": args_parse.attractor_elements,
-#     }
-#     return DftSettings(**dft_parameters)
 
 def map_args_to_dft_params(args_parse: argparse.Namespace) -> DftSettings:
     """

@@ -142,7 +142,6 @@ structure fetched from Materials Project, would be:
 run_generator \
   -mq MgO \
   -mak ID \
-  -ac "mpirun -np 28 /path/to/aims.x" \
   -sd /path/to/species \
   -rdr ./workdir \
   -ds

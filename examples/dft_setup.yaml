@@ -2,12 +2,12 @@
 
 # Core DFT Settings
 dft_code: aims    #'vasp' or 'aims'
-functional: hse06    #'pbe', 'pbeu', 'hse06', 'pbe0'
+xc_functional: hse06    #'pbe', 'pbeu', 'hse06', 'pbe0'
 calc_type: relax-atoms    #'scf', 'relax-atoms', 'relax-all'
 species_dir: /u/mrinaldi/program/fhiaims/polaron/species_defaults/defaults_2020/light
 
 # Structural/Defect Generation
-supercell: [2, 2, 2]
+supercell_dims: [2, 2, 2]
 
 # Spin/U/Hybrid Parameters
 spin_moment: 1.0

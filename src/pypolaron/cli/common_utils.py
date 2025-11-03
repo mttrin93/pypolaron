@@ -294,11 +294,11 @@ def load_structure(args_parse: argparse.Namespace) -> Optional[Structure]:
 
     return structure
 
-def validate_dft_input(args_parse: argparse.Namespace) -> bool:
+def validate_dft_input(arg_parse : argparse.Namespace, dft_parameters: DftSettings) -> bool:
     """Performs final checks on polaron/vacancy and functional choices."""
-    polaron_type = args_parse.polaron_type.lower()
-    number_of_polarons = args_parse.polaron_number
-    number_of_oxygen_vacancies = args_parse.oxygen_vacancy_number
+    polaron_type = arg_parse.polaron_type.lower()
+    number_of_polarons = arg_parse.polaron_number
+    number_of_oxygen_vacancies = arg_parse.oxygen_vacancy_number
 
     if polaron_type not in ["electron", "hole"]:
         log.warning(f"Invalid polaron type choice: {polaron_type}. Exiting.")
@@ -308,7 +308,7 @@ def validate_dft_input(args_parse: argparse.Namespace) -> bool:
         log.warning(f"No polarons or oxygen vacancies will be created. Exiting. ")
         return False
 
-    if args_parse.xc_functional.lower() == 'pbeu' and polaron_type == 'hole':
+    if dft_parameters.functional.lower() == 'pbeu' and polaron_type == 'hole':
         log.warning("PBE+U not possible with hole polarons. Occupation matrix control works only for electron "
                     "polarons. Please switch to hybrid functionals. Exiting ")
         return False

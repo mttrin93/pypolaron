@@ -26,10 +26,11 @@ def main(args=None):
     number_of_polarons = args_parse.polaron_number
     number_of_oxygen_vacancies = args_parse.oxygen_vacancy_number
 
-    if not validate_dft_input(args_parse):
+    dft_parameters = map_args_to_dft_params(args_parse)
+
+    if not validate_dft_input(args_parse, dft_parameters):
         return
 
-    dft_parameters = map_args_to_dft_params(args_parse)
     workflow_policy = load_workflow_policy_from_yaml(args_parse.policy_file)
 
     if dft_parameters.calc_type not in ["relax-atoms", "relax-all"]:

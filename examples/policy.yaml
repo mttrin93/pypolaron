@@ -1,0 +1,12 @@
+#policy.yaml
+nnodes: 2
+ntasks: 128
+walltime: "00:10:00"
+max_retries: 5
+scheduler: slurm
+aims_command: "srun /u/mrinaldi/program/fhiaims/polaron/build_gnu/aims.240206.scalapack.mpi.x"
+
+environment_setup: |
+ module purge
+ module load gcc/13  openmpi/4.1  mkl/2024.0
+ export OMP_NUM_THREADS=1

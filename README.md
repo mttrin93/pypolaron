@@ -124,13 +124,14 @@ the target site(s) to favour localisation.
 
 * `-ds, --do-submit`: enable submission of generated job scripts to the scheduler immediately.
 
-* `-ac, --aims-command` and `-sd, --species-dir`: AIMS-specific settings required when 
-using `--dft-code aims`.
+* `-sd, --species-dir`: AIMS-specific settings required when using `--dft-code aims`.
 
 * `-l, --log`: set a log filename.
 
 * `-rp, --run-pristine`: run the pristine (undefected) structure, useful for formation 
 energy references.
+
+* `-pf, --policy-file`: path to a YAML file containing workflow execution policy settings.
 
 A more detailed description of the single options can be obtained running `run_generator -h`. 
 
@@ -145,6 +146,7 @@ run_generator \
   -sd /path/to/species \
   -rdr ./workdir \
   -ds
+  -pf /path/to/examples/policy.yaml
  ```
 
 where the calculation is automatically submitted to the SLURM cluster.

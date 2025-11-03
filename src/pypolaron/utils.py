@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 from typing import List, Dict, Tuple, Optional, TypedDict, Union
 import numpy as np
 import socket
-import getpass
 import logging
 import re
 import time

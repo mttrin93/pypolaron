@@ -4,7 +4,9 @@ import os
 from typing import List, Tuple, Union, Any, Optional, Dict, Literal
 from pathlib import Path
 import socket
+import yaml
 import getpass
+from dataclasses import asdict
 
 from pymatgen.core.structure import Structure
 from pymatgen.ext.matproj import MPRester
@@ -207,56 +209,61 @@ def build_common_parser(prog_name: str, description: str) -> argparse.ArgumentPa
                                              "Settings for job scheduling, retries, and resources.")
 
     policy_group.add_argument(
-        "--nnodes",
-        type=int,
-        default=1,
-        help="Number of nodes. Default: 1."
-    )
-
-    policy_group.add_argument(
-        "--ntasks",
-        type=int,
-        default=72,
-        help="Number of tasks (cores) per node for job scripts. Default: 72."
-    )
-
-    policy_group.add_argument(
-        "--walltime",
-        type=str,
-        default="02:00:00",
-        help="Walltime limit for job scripts (e.g., HH:MM:SS). Default: 02:00:00."
-    )
-
-    policy_group.add_argument(
-        "--max-retries",
-        type=int,
-        default=3,
-        help="Maximum number of retries for TIMEOUT jobs. Default: 3."
-    )
-
-    policy_group.add_argument(
-        "--scheduler",
-        type=str,
-        choices=['slurm', 'local'],
-        default="slurm",
-        help="Job scheduler to use ('slurm' or 'local' bash execution). Default: slurm."
-    )
-
-    policy_group.add_argument(
-        "--env-setup",
+        "-pf", "--policy-file",
         type=str,
         default=None,
-        help="Optional: Override the default module load/export commands as a raw string or path to a file."
+        help="Path to a YAML file containing workflow execution policy settings."
     )
 
-    policy_group.add_argument(
-        "-ac", "--aims-command",
-        type=str,
-        default="mpirun -np 8 aims.x",
-        help="Full command to execute FHI-aims (used in job bin)."
-    )
-
-    # TODO: add parsing YAML file for policy settings
+    # policy_group.add_argument(
+    #     "--nnodes",
+    #     type=int,
+    #     default=1,
+    #     help="Number of nodes. Default: 1."
+    # )
+    #
+    # policy_group.add_argument(
+    #     "--ntasks",
+    #     type=int,
+    #     default=72,
+    #     help="Number of tasks (cores) per node for job scripts. Default: 72."
+    # )
+    #
+    # policy_group.add_argument(
+    #     "--walltime",
+    #     type=str,
+    #     default="02:00:00",
+    #     help="Walltime limit for job scripts (e.g., HH:MM:SS). Default: 02:00:00."
+    # )
+    #
+    # policy_group.add_argument(
+    #     "--max-retries",
+    #     type=int,
+    #     default=3,
+    #     help="Maximum number of retries for TIMEOUT jobs. Default: 3."
+    # )
+    #
+    # policy_group.add_argument(
+    #     "--scheduler",
+    #     type=str,
+    #     choices=['slurm', 'local'],
+    #     default="slurm",
+    #     help="Job scheduler to use ('slurm' or 'local' bash execution). Default: slurm."
+    # )
+    #
+    # policy_group.add_argument(
+    #     "--env-setup",
+    #     type=str,
+    #     default=None,
+    #     help="Optional: Override the default module load/export commands as a raw string or path to a file."
+    # )
+    #
+    # policy_group.add_argument(
+    #     "-ac", "--aims-command",
+    #     type=str,
+    #     default="mpirun -np 8 aims.x",
+    #     help="Full command to execute FHI-aims (used in job bin)."
+    # )
 
     return parser
 
@@ -393,6 +400,31 @@ def map_args_to_policy(args_parse: argparse.Namespace) -> WorkflowPolicy:
     }
 
     return WorkflowPolicy(**policy_params)
+
+def load_workflow_policy(policy_file: Optional[Union[str, Path]] = None) -> WorkflowPolicy:
+    """
+    Loads execution policy settings from a YAML file, merging them with defaults.
+    """
+    policy_dict = asdict(WorkflowPolicy())
+
+    if policy_file:
+        policy_path = Path(policy_file)
+        if not policy_path.is_file():
+            raise FileNotFoundError(f"Policy file not found: {policy_file}")
+
+        try:
+            with open(policy_path, 'r') as f:
+                user_settings = yaml.safe_load(f)
+
+            if user_settings:
+                for key, value in user_settings.items():
+                    if key in policy_dict:
+                        policy_dict[key] = value
+
+        except yaml.YAMLError as e:
+            raise ValueError(f"Error parsing YAML policy file {policy_file}: {e}")
+
+    return WorkflowPolicy(**policy_dict)
 
 def display_candidates(candidates: List[Any], title: str):
     """Prints the ranked list of candidates in a readable format."""

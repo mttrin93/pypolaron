@@ -1,7 +1,7 @@
 import sys
 from pypolaron.cli.common_utils import build_common_parser, setup_cli_logging, load_structure, \
     validate_dft_input, map_args_to_dft_params, log, process_and_generate_candidates, run_polaron_workflow, \
-    map_args_to_policy
+    map_args_to_policy, load_workflow_policy
 
 
 def main(args=None):
@@ -29,7 +29,8 @@ def main(args=None):
         return
 
     dft_parameters = map_args_to_dft_params(args_parse)
-    workflow_policy = map_args_to_policy(args_parse)
+    # workflow_policy = map_args_to_policy(args_parse)
+    workflow_policy = load_workflow_policy(args_parse.policy_file)
 
     # 4) candidates generation
     polaron_candidates, oxygen_vacancies_candidates, polaron_generator = process_and_generate_candidates(

@@ -2,19 +2,12 @@ import re
 import numpy as np
 from pathlib import Path
 from typing import Dict, Tuple, List, Optional, Any
-from ase.io import read
-from numpy import ndarray, dtype, generic
 from ase.io.cube import read_cube
 import subprocess
-import json
 import os
 
 from pypolaron.formation_energy_calculator import FormationEnergyCalculator
-
-
-# TODO: add functionality to check if the localization on single atoms was successful, for instance:
-#  1) check variations in Bader charges
-#  2) use formation energies to rank stable polaron sites
+from pypolaron.utils import parse_aims_total_energy
 
 
 class PolaronAnalyzer:
@@ -37,34 +30,6 @@ class PolaronAnalyzer:
         self.fermi_energy = fermi_energy
         self.volume_ang3 = volume_ang3
         self.exclude_radius = exclude_radius
-
-    def parse_aims_total_energy(self, aims_out_path: str) -> float:
-        """
-        Parse total energy (in eV) from a FHI-aims output file using ASE.
-        Falls back to regex parsing if ASE reading fails.
-        """
-        p = Path(aims_out_path)
-        # --- Attempt to read using ASE ---
-        try:
-            atoms = read(p, format="aims-output")
-            if hasattr(atoms, "get_potential_energy"):
-                return atoms.get_potential_energy()
-        except Exception as ase_err:
-            print(
-                f"[ASE parser warning] Failed to read {aims_out_path} with ASE: {ase_err}"
-            )
-
-        text = p.read_text()
-        # try some common patterns; energies in aims often in eV with 'Total energy of the DFT part' or 'Total energy'
-        pattern = r"\|\s*Electronic free energy\s*:\s*([-\d\.Ee+]+)\s*eV"
-        matches = re.findall(pattern, text, flags=re.IGNORECASE)
-        if matches:
-            # take the last matched line
-            return float(matches[-1])
-        else:
-            raise RuntimeError(
-                f"Could not find electronic free energy in {aims_out_path}"
-            )
 
     def parse_aims_mulliken_population(self, aims_out_path: str) -> Dict[int, float]:
         """

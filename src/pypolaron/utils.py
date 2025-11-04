@@ -6,8 +6,10 @@ import logging
 import re
 import time
 import subprocess
+from ase.io import read
 from pymatgen.core import Structure
 from pyfhiaims.geometry import AimsGeometry
+from pyfhiaims import AimsStdout
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -436,3 +438,41 @@ def is_job_completed(dft_code: str, job_directory: Path) -> bool:
             return False
 
     return False
+
+def parse_aims_total_energy(self, aims_out_path: str) -> float:
+    """
+    Parse total energy (in eV) from a FHI-aims output file using ASE.
+    Falls back to regex parsing if ASE reading fails.
+    """
+    p = Path(aims_out_path)
+    try:
+        pyfhiaims_out = AimsStdout(p)
+
+        if hasattr(pyfhiaims_out, "free_energy"):
+            return pyfhiaims_out.results["free_energy"]
+    except Exception as pyfhaims_err:
+        print(
+            f"[pyfhaims parser warning] Failed to read {aims_out_path} with ASE: {pyfhaims_err}"
+        )
+
+    p = Path(aims_out_path)
+    try:
+        atoms = read(p, format="aims-output")
+
+        if hasattr(atoms, "get_potential_energy"):
+            return atoms.get_potential_energy()
+    except Exception as ase_err:
+        print(
+            f"[ASE parser warning] Failed to read {aims_out_path} with ASE: {ase_err}"
+        )
+
+    text = p.read_text()
+    pattern = r"\|\s*Electronic free energy\s*:\s*([-\d\.Ee+]+)\s*eV"
+    matches = re.findall(pattern, text, flags=re.IGNORECASE)
+    if matches:
+        return float(matches[-1])
+    else:
+        raise RuntimeError(
+            f"Could not find electronic free energy in {aims_out_path}"
+        )
+

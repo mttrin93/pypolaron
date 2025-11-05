@@ -658,7 +658,7 @@ def get_localization_metrics(
         spin_channel: str,
         data: List[Tuple[float, float]],
         log: logging.Logger,
-        number_of_polarons: int,
+        number_of_states: int,
         polaron_type: str = "electron",
 ):
     if not data:
@@ -686,11 +686,23 @@ def get_localization_metrics(
 
     energy_split_valence_band_maximum = 0.
     if polaron_type == "electron":
-        energy_HOMO_minus_1 = sorted_data[homo_index - 1][0] if homo_index > 0 else None
-        energy_split_valence_band_maximum = energy_HOMO - energy_HOMO_minus_1 if energy_HOMO_minus_1 is not None else 0.0
+        energy_HOMO_minus_number_of_polarons = sorted_data[homo_index - number_of_states][0] \
+            if homo_index > 0 else None
+
+        energy_valence_band = sorted_data[homo_index - number_of_states - 1][0] \
+            if homo_index > 0 else None
+
+        energy_split_valence_band_maximum = energy_HOMO_minus_number_of_polarons - energy_valence_band \
+            if (energy_HOMO_minus_number_of_polarons is not None and energy_valence_band is not None) else 0.0
     elif polaron_type == "hole":
-        energy_LUMO_plus_1 = sorted_data[lumo_index + 1][0] if lumo_index > 0 else None
-        energy_split_valence_band_maximum = energy_LUMO - energy_LUMO_plus_1 if energy_LUMO_plus_1 is not None else 0.0
+        energy_LUMO_plus_number_of_polarons = sorted_data[lumo_index + number_of_states][0] \
+            if lumo_index > 0 else None
+
+        energy_conduction_band = sorted_data[lumo_index + number_of_states + 1][0] \
+            if lumo_index > 0 else None
+
+        energy_split_valence_band_maximum = energy_conduction_band - energy_LUMO_plus_number_of_polarons \
+            if (energy_LUMO_plus_number_of_polarons is not None and energy_conduction_band is not None) else 0.0
     else:
         log.warning(f"{polaron_type} is not a valid polaron type!")
 
@@ -699,3 +711,23 @@ def get_localization_metrics(
 
     return energy_HOMO, energy_LUMO, energy_split_valence_band_maximum, energy_split_conduction_band_minimum, \
         localization_gap
+
+def parse_total_spin_moment(aims_out_path: str) -> Optional[float]:
+    """
+    Parses the total spin moment difference (N = N_up - N_down) from AIMS output text.
+
+    This value represents the difference in the number of spin-up and spin-down electrons.
+
+    Args:
+        aims_out_content: The full content of the aims.out file as a string.
+
+    Returns:
+        The spin moment N as a float, or None if the pattern is not found.
+    """
+    p = Path(aims_out_path)
+    text = p.read_text()
+
+    match = re.search(r"N\s*=\s*N_up\s*-\s*N_down\s*:\s*([-+]?\d*\.\d+|\d+)", text)
+    if match:
+        return float(match.group(1))
+    return None

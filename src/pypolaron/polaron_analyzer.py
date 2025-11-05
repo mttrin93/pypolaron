@@ -6,8 +6,10 @@ import logging
 
 from pypolaron.formation_energy_calculator import FormationEnergyCalculator
 from pypolaron.utils import parse_aims_total_energy, parse_aims_atomic_properties, \
-    calculate_property_difference, get_localization_metrics
+    calculate_property_difference, get_localization_metrics, parse_total_spin_moment
 
+# TODO: in the future run_postprocess script add the condition that if both mulliken and
+#  hirshfled are not found, run a new scf calculation
 
 class PolaronAnalyzer:
     """
@@ -144,12 +146,14 @@ class PolaronAnalyzer:
         return delta
 
     # TODO: this is for a single polaron, extend it to multiple polarons
+    # TODO: add logs for polaron eigenvalues, distances to cbm, vbm -> to do in run_workflow below
     def analyze_polaron_localization(
             self,
             eigenvalues_data: Dict[str, List[Tuple[float, float]]],
             log: logging.Logger,
             number_of_polarons: int,
             polaron_type: str,
+            charged_out_path: str,
             localization_distance_threshold: float = 0.1,
     ) -> Dict[str, Union[float, str]]:
         """
@@ -165,6 +169,23 @@ class PolaronAnalyzer:
         Returns:
             A dictionary of results including HOMO, LUMO, localization metrics, and the result summary.
         """
+        total_spin_moment = parse_total_spin_moment(charged_out_path)
+
+        if total_spin_moment is None:
+            log.warning("Total spin moment could not be parsed. Cannot determine spin distribution.")
+            number_of_states_up = int(number_of_polarons / 2)
+            number_of_states_down = int(number_of_polarons / 2)
+        else:
+            # N_up = (N_polaron + N_spin) / 2
+            # N_down = (N_polaron - N_spin) / 2
+
+            number_of_states_up = int((number_of_polarons + total_spin_moment) / 2)
+            number_of_states_down = int((number_of_polarons - total_spin_moment) / 2)
+
+            if number_of_states_up < 0 or number_of_states_down < 0:
+                log.warning("Inconsistent spin and polaron numbers detected. Cannot determine spin distribution.")
+                number_of_states_up = number_of_polarons
+                number_of_states_down = 0
 
         analysis_results = {}
 
@@ -172,7 +193,7 @@ class PolaronAnalyzer:
             spin_channel="Spin Up",
             data=eigenvalues_data.get("spin_up", []),
             log=log,
-            number_of_polarons=number_of_polarons,
+            number_of_states=number_of_states_up,
             polaron_type=polaron_type,
         )
 
@@ -180,7 +201,7 @@ class PolaronAnalyzer:
             spin_channel="Spin Down",
             data=eigenvalues_data.get("spin_down",[]),
             log=log,
-            number_of_polarons=number_of_polarons,
+            number_of_states=number_of_states_down,
             polaron_type=polaron_type,
         )
 

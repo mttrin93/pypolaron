@@ -420,9 +420,7 @@ class PolaronGenerator:
         """
         Write a simple FHI-aims 'geometry.in' and 'control.in' that:
         - builds the supercell geometry
-        - sets total charge (if add_charge != 0) into the control.in
-        - sets spin collinear and a simple initial moment configuration (spin init block)
-        NOTE: this writes a minimal control.in; you should tune numerical settings for production.
+        - writes control file using provided settings
         """
 
         # TODO: add functionality to optimize the cell size as done in doped
@@ -538,6 +536,16 @@ class PolaronGenerator:
             params["relax_geometry"] = "trm 1e-4"
             if settings.calc_type.lower() == "relax-all":
                 params["relax_unit_cell"] = "full"
+
+        if settings.output_mulliken:
+            params.update({
+                "output": "mulliken",
+            })
+
+        if settings.output_hirshfeld:
+            params.update({
+                "output": "hirshfeld",
+            })
 
         control = AimsControl(params)
         control.write_file(geom, outdir)

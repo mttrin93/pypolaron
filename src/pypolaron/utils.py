@@ -140,7 +140,6 @@ class DftSettings:
 
     # Structural/Model Parameters
     supercell: Tuple[int, int, int] = (2, 2, 2)
-    add_charge: int = -1  # TODO: obsolete argument
 
     # Spin/U/Hybrid Parameters
     spin_moment: float = 1.0
@@ -151,7 +150,8 @@ class DftSettings:
     disable_elsi_restart: bool = False
 
     # Analysis Parameters
-    do_bader: bool = True
+    output_mulliken: bool = False
+    output_hirshfeld: bool = False
     potential_axis: int = 2
     dielectric_eps: float = 10.0
     auto_analyze: bool = True

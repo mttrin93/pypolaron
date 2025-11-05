@@ -156,7 +156,6 @@ class PolaronAnalyzer:
         spin_cube: Optional[str] = None,
         pot_cube_pristine: Optional[str] = None,
         pot_cube_charged: Optional[str] = None,
-        bader_executable_path: Optional[str] = None,
     ) -> Dict[str, float]:
         """
         High-level analysis:

@@ -686,25 +686,23 @@ def get_localization_metrics(
 
     energy_split_valence_band_maximum = 0.
     if polaron_type == "electron":
-        energy_HOMO_minus_number_of_polarons = sorted_data[homo_index - (number_of_states - 1)][0] \
+        energy_lower_polaron_state = sorted_data[homo_index - (number_of_states - 1)][0] \
             if homo_index > 0 else None
 
         energy_valence_band = sorted_data[homo_index - number_of_states][0] \
             if homo_index > 0 else None
 
-        print("energy_valence_band", energy_valence_band, "energy_HOMO_minus_number_of_polarons", energy_HOMO_minus_number_of_polarons)
-
-        energy_split_valence_band_maximum = energy_HOMO_minus_number_of_polarons - energy_valence_band \
-            if (energy_HOMO_minus_number_of_polarons is not None and energy_valence_band is not None) else 0.0
+        energy_split_valence_band_maximum = energy_lower_polaron_state - energy_valence_band \
+            if (energy_lower_polaron_state is not None and energy_valence_band is not None) else 0.0
     elif polaron_type == "hole":
-        energy_LUMO_plus_number_of_polarons = sorted_data[lumo_index + number_of_states][0] \
+        energy_higher_polaron_state = sorted_data[lumo_index + (number_of_states - 1)][0] \
             if lumo_index > 0 else None
 
-        energy_conduction_band = sorted_data[lumo_index + number_of_states + 1][0] \
+        energy_conduction_band = sorted_data[lumo_index + number_of_states][0] \
             if lumo_index > 0 else None
 
-        energy_split_valence_band_maximum = energy_conduction_band - energy_LUMO_plus_number_of_polarons \
-            if (energy_LUMO_plus_number_of_polarons is not None and energy_conduction_band is not None) else 0.0
+        energy_split_valence_band_maximum = energy_conduction_band - energy_higher_polaron_state \
+            if (energy_higher_polaron_state is not None and energy_conduction_band is not None) else 0.0
     else:
         log.warning(f"{polaron_type} is not a valid polaron type!")
 

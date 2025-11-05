@@ -17,7 +17,6 @@ from pypolaron.utils import DftSettings, run_job_and_wait, read_final_geometry, 
 # TODO: When seeding multiple polarons, be careful about total charge and spin multiplicity:
 #  two electrons can pair up (singlet) or remain as separate spins — seed spin moments with the sign you want (e.g., both +1.0 for triplet-like initial guess). Check the final spin in aims.out.
 # TODO: Always check supercell convergence (formation energy vs cell size). The FNV/Makov–Payne corrections are approximations — don't rely just on a single cell.
-# TODO: Use actual Bader (Henkelman) for accurate charges. The sphere-integration fallback is handy for quick checks but not production-quality.
 
 # TODO: next implementations:
 #  Goal: Extract physical insights: polaron formation energies, interaction, and thermodynamic properties.

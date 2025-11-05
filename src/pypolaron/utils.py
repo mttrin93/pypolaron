@@ -604,3 +604,98 @@ def calculate_property_difference(
         delta_results[index] = delta
 
     return delta_results if is_list else delta_results[indices[0]]
+
+def parse_aims_eigenvalues(
+        aims_out_path: str,
+        log: logging.Logger
+) -> Dict[str, List[Tuple[float, float]]]:
+    """
+    Parses Kohn-Sham eigenvalues and occupations for both spin channels from FHI-aims output.
+
+    Returns:
+        Dict with keys 'spin_up' and 'spin_down', each mapping to a list of (Energy_eV, Occupation).
+        Energy values are returned in eV.
+    """
+    p = Path(aims_out_path)
+    if not p.exists():
+        log.error(f"Eigenvalue parsing failed: File not found at {aims_out_path}")
+        return {'spin_up': [], 'spin_down': []}
+
+    text = p.read_text()
+    results = {}
+
+    pattern = re.compile(
+        r'Spin-(up|down) eigenvalues:\s*\n'
+        r'(?:.*\n){3}'  # Skip header lines: 'State Occupation Eigenvalue [Ha] Eigenvalue [eV]'
+        r'(\s*\d+\s+[-\d\.]+\s+[-\d\.]+\s+[-\d\.Ee+-]+\s*\n)*',
+        re.IGNORECASE | re.MULTILINE
+    )
+
+    line_pattern = re.compile(
+        r'\s*(\d+)\s+([-\d\.]+)\s+([-\d\.Ee+-]+)\s+([-\d\.Ee+-]+)'
+    )
+
+    for match in pattern.finditer(text):
+        spin_channel = match.group(1).lower()
+        eigenvalue_lines = match.group(0).splitlines()
+
+        eigenvalues = []
+        for line in eigenvalue_lines[3:]:
+            line_match = line_pattern.match(line)
+            if line_match:
+                # We need Occupation (Group 2) and Eigenvalue [eV] (Group 4)
+                occupation = float(line_match.group(2))
+                eigenvalue_eV = float(line_match.group(4))
+                eigenvalues.append((eigenvalue_eV, occupation))
+            elif not line.strip().startswith('|'):
+                break
+
+        results[f'spin_{spin_channel}'] = eigenvalues
+
+    return results
+
+def get_localization_metrics(
+        spin_channel: str,
+        data: List[Tuple[float, float]],
+        log: logging.Logger,
+        number_of_polarons: int,
+        polaron_type: str = "electron",
+):
+    if not data:
+        return None, None, None, None
+
+    sorted_data = sorted(data, key=lambda x: x[0])
+
+    homo_index = -1
+    lumo_index = -1
+
+    # Find the last occupied state (HOMO) and first unoccupied state (LUMO)
+    for i, (energy, occ) in enumerate(sorted_data):
+        if occ >= 0.5:
+            homo_index = i
+        if occ <= 0.5 and lumo_index == -1 and i > homo_index:
+            lumo_index = i
+            break
+
+    if homo_index == -1 or lumo_index == -1:
+        log.warning(f"Failed to cleanly identify HOMO/LUMO for {spin_channel}. Skipping analysis.")
+        return None, None, None, None
+
+    energy_HOMO = sorted_data[homo_index][0]
+    energy_LUMO = sorted_data[lumo_index][0]
+
+    energy_split_valence_band_maximum = 0.
+    if polaron_type == "electron":
+        energy_HOMO_minus_1 = sorted_data[homo_index - 1][0] if homo_index > 0 else None
+        energy_split_valence_band_maximum = energy_HOMO - energy_HOMO_minus_1 if energy_HOMO_minus_1 is not None else 0.0
+    elif polaron_type == "hole":
+        energy_LUMO_plus_1 = sorted_data[lumo_index + 1][0] if lumo_index > 0 else None
+        energy_split_valence_band_maximum = energy_LUMO - energy_LUMO_plus_1 if energy_LUMO_plus_1 is not None else 0.0
+    else:
+        log.warning(f"{polaron_type} is not a valid polaron type!")
+
+    energy_split_conduction_band_minimum = energy_LUMO - energy_HOMO
+    localization_gap = min(energy_split_valence_band_maximum, energy_split_conduction_band_minimum)
+
+    return energy_HOMO, energy_LUMO, energy_split_valence_band_maximum, energy_split_conduction_band_minimum, \
+        localization_gap

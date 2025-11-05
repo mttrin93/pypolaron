@@ -6,7 +6,7 @@ import logging
 
 from pypolaron.formation_energy_calculator import FormationEnergyCalculator
 from pypolaron.utils import parse_aims_total_energy, parse_aims_atomic_properties, \
-    calculate_property_difference
+    calculate_property_difference, get_localization_metrics
 
 
 class PolaronAnalyzer:
@@ -142,6 +142,91 @@ class PolaronAnalyzer:
         )
 
         return delta
+
+    # TODO: this is for a single polaron, extend it to multiple polarons
+    def analyze_polaron_localization(
+            self,
+            eigenvalues_data: Dict[str, List[Tuple[float, float]]],
+            log: logging.Logger,
+            number_of_polarons: int,
+            polaron_type: str,
+            localization_distance_threshold: float = 0.1,
+    ) -> Dict[str, Union[float, str]]:
+        """
+        Calculates band edge gaps and determines the polaron localization channel
+        based on the largest split-off energy (localization gap).
+
+        Args:
+            eigenvalues_data: Dict with keys 'spin_up', 'spin_down' containing lists
+                              of (Energy_eV, Occupation).
+            log: The logger instance.
+            localization_distance_threshold: Minimum gap size (in eV) required to label a state as localized.
+
+        Returns:
+            A dictionary of results including HOMO, LUMO, localization metrics, and the result summary.
+        """
+
+        analysis_results = {}
+
+        E_homo_up, E_lumo_up, E_split_vbm_up, E_split_cbm_up, gap_up = get_localization_metrics(
+            spin_channel="Spin Up",
+            data=eigenvalues_data.get("spin_up", []),
+            log=log,
+            number_of_polarons=number_of_polarons,
+            polaron_type=polaron_type,
+        )
+
+        E_homo_down, E_lumo_down, E_split_vbm_down, E_split_cbm_down, gap_down = get_localization_metrics(
+            spin_channel="Spin Down",
+            data=eigenvalues_data.get("spin_down",[]),
+            log=log,
+            number_of_polarons=number_of_polarons,
+            polaron_type=polaron_type,
+        )
+
+        analysis_results["E_HOMO_Up_eV"] = E_homo_up
+        analysis_results["E_LUMO_Up_eV"] = E_lumo_up
+        analysis_results["E_Split_VBM_Up_eV"] = E_split_vbm_up
+        analysis_results["E_Split_CBM_Up_eV"] = E_split_cbm_up
+
+        analysis_results["E_HOMO_Down_eV"] = E_homo_down
+        analysis_results["E_LUMO_Down_eV"] = E_lumo_down
+        analysis_results["E_Split_VBM_Down_eV"] = E_split_vbm_down
+        analysis_results["E_Split_CBM_Down_eV"] = E_split_cbm_down
+
+        # --- Polaron Localization Determination ---
+        if gap_up is None and gap_down is None:
+            analysis_results["Localization_Channel"] = "Failed (No Eigenvalue data)"
+        elif gap_up is None:
+            analysis_results["Localization_Channel"] = "Spin Down (Spin Up data missing)"
+        elif gap_down is None:
+            analysis_results["Localization_Channel"] = "Spin Up (Spin Down data missing)"
+        else:
+            # The polaron is localized in the channel where the largest split-off gap occurs.
+            # This state is typically the HOMO (for electron polaron) or LUMO (for hole polaron).
+            # Since the polaron is the last occupied state (HOMO), the split-off is HOMO vs HOMO-1.
+
+            # Metric is the largest band edge split (either HOMO-1 to HOMO or HOMO to LUMO)
+            if gap_up > gap_down:
+                channel = "Spin Up"
+                largest_split = gap_up
+            else:
+                channel = "Spin Down"
+                largest_split = gap_down
+
+            analysis_results['Largest_Localization_Gap_eV'] = largest_split
+            analysis_results['Localization_Channel'] = channel
+
+            # --- Warning ---
+            if largest_split < localization_distance_threshold:
+                analysis_results['Warning'] = (
+                    f"Localization gap ({largest_split:.3f} eV) is small. "
+                    "The small polaron may not be well-localized or may be delocalized in the structure."
+                )
+            else:
+                analysis_results['Warning'] = "The small polaron is well localized"
+
+        return analysis_results
 
     def analyze_polaron_run(
         self,

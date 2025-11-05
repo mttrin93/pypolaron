@@ -439,7 +439,10 @@ def is_job_completed(dft_code: str, job_directory: Path) -> bool:
 
     return False
 
-def parse_aims_total_energy(aims_out_path: str) -> float:
+def parse_aims_total_energy(
+        aims_out_path: str,
+        log: logging.Logger
+) -> float:
     """
     Parse total energy (in eV) from a FHI-aims output file using ASE.
     Falls back to regex parsing if ASE reading fails.
@@ -451,7 +454,7 @@ def parse_aims_total_energy(aims_out_path: str) -> float:
         if hasattr(pyfhiaims_out, "free_energy"):
             return pyfhiaims_out.results["free_energy"]
     except Exception as pyfhaims_err:
-        print(
+        log.warning(
             f"[pyfhaims parser warning] Failed to read {aims_out_path} with ASE: {pyfhaims_err}"
         )
 
@@ -462,7 +465,7 @@ def parse_aims_total_energy(aims_out_path: str) -> float:
         if hasattr(atoms, "get_potential_energy"):
             return atoms.get_potential_energy()
     except Exception as ase_err:
-        print(
+        log.warning(
             f"[ASE parser warning] Failed to read {aims_out_path} with ASE: {ase_err}"
         )
 
@@ -493,21 +496,16 @@ def parse_aims_atomic_properties(
         return {}
 
     # Define the keys we are looking for based on your list
-    PROPERTY_KEYS = {
-        'mulliken_charge': 'mulliken_charges',
-        'mulliken_spin': 'mulliken_spins',
-        'hirshfeld_charge': 'hirshfeld_charges',
-        'hirshfeld_spin': 'hirshfeld_spins',
-    }
+    PROPERTY_KEYS = ["mulliken_charges", "mulliken_spins", "hirshfeld_charges", "hirshfeld_spins"]
 
     results = {}
 
     try:
         aims_out = AimsStdout(p)
-        for result_key, aims_key in PROPERTY_KEYS.items():
+        for aims_key in PROPERTY_KEYS:
             values = aims_out.results[aims_key]
             if values:
-                results[result_key] = {
+                results[aims_key] = {
                     i: float(v)
                     for i, v in enumerate(values)
                 }
@@ -526,7 +524,7 @@ def parse_aims_atomic_properties(
             def _find_block_start(lines: List[str], start_phrase: str) -> Optional[int]:
                 for i, line in enumerate(lines):
                     if start_phrase in line:
-                        return i + 4
+                        return i + 3
                 return None
 
             # --- Mulliken Parsing ---
@@ -538,7 +536,7 @@ def parse_aims_atomic_properties(
                     match = re.search(r'\|\s*(\d+)\s+([-\d\.]+)\s+([-\d\.]+)', line)
                     if match:
                         mulliken_charge_map[int(match.group(1)) - 1] = float(match.group(3))
-                results['mulliken_charge'] = mulliken_charge_map
+                results['mulliken_charges'] = mulliken_charge_map
 
             mulliken_spin_start = _find_block_start(lines, "Summary of the per-atom spin analysis:")
             if mulliken_spin_start:
@@ -548,7 +546,7 @@ def parse_aims_atomic_properties(
                     match = re.search(r'\|\s*(\d+)\s+([-\d\.]+)', line)
                     if match:
                         mulliken_spin_map[int(match.group(1)) - 1] = float(match.group(2))
-                results['mulliken_spin'] = mulliken_spin_map
+                results['mulliken_spins'] = mulliken_spin_map
 
             # --- Hirshfeld Parsing ---
             hirshfeld_block_start = text.find("Performing Hirshfeld analysis")
@@ -566,14 +564,14 @@ def parse_aims_atomic_properties(
                     hirshfeld_charge_map[atom_idx_0based] = float(match.group(3))
                     hirshfeld_spin_map[atom_idx_0based] = float(match.group(4))
 
-                results['hirshfeld_charge'] = hirshfeld_charge_map
-                results['hirshfeld_spin'] = hirshfeld_spin_map
+                results['hirshfeld_charges'] = hirshfeld_charge_map
+                results['hirshfeld_spins'] = hirshfeld_spin_map
 
         except Exception as manual_err:
             log.error(f"Manual parsing fallback also failed: {manual_err}")
 
     # Final Validation and return (ensuring all properties were found)
-    if not results.get('mulliken_charge') and not results.get('hirshfeld_charge'):
+    if not results.get('mulliken_charges') and not results.get('hirshfeld_charges'):
         log.warning(
             "No atomic charges (Mulliken or Hirshfeld) could be parsed. "
             "The calculation might be incomplete or the output file lacks the analysis blocks."

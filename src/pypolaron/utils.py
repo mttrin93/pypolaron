@@ -439,7 +439,7 @@ def is_job_completed(dft_code: str, job_directory: Path) -> bool:
 
     return False
 
-def parse_aims_total_energy(self, aims_out_path: str) -> float:
+def parse_aims_total_energy(aims_out_path: str) -> float:
     """
     Parse total energy (in eV) from a FHI-aims output file using ASE.
     Falls back to regex parsing if ASE reading fails.
@@ -476,3 +476,133 @@ def parse_aims_total_energy(self, aims_out_path: str) -> float:
             f"Could not find electronic free energy in {aims_out_path}"
         )
 
+def parse_aims_atomic_properties(
+        aims_out_path: str,
+        log: logging.Logger
+) -> Dict[str, Dict[int, float]]:
+    """
+    Parses Mulliken/Hirshfeld charges and spins from an FHI-aims output file,
+    prioritizing pyfhiaims parsing over manual regex fallback.
+
+    Returns:
+        Dict mapping property name (e.g., 'mulliken_charge') to {atom_index (0-based): value}.
+    """
+    p = Path(aims_out_path)
+    if not p.exists():
+        log.error(f"Output file not found: {p.name}")
+        return {}
+
+    # Define the keys we are looking for based on your list
+    PROPERTY_KEYS = {
+        'mulliken_charge': 'mulliken_charges',
+        'mulliken_spin': 'mulliken_spins',
+        'hirshfeld_charge': 'hirshfeld_charges',
+        'hirshfeld_spin': 'hirshfeld_spins',
+    }
+
+    results = {}
+
+    try:
+        aims_out = AimsStdout(p)
+        for result_key, aims_key in PROPERTY_KEYS.items():
+            values = aims_out.results[aims_key]
+            if values:
+                results[result_key] = {
+                    i: float(v)
+                    for i, v in enumerate(values)
+                }
+
+    except Exception as pyfhiaims_err:
+        log.warning(
+            f"[pyfhiaims parser warning] Failed to retrieve atomic properties from {p.name}: {pyfhiaims_err}"
+        )
+        log.warning("Falling back to manual regex parsing for charges/spins.")
+
+        try:
+            text = p.read_text()
+            lines = text.splitlines()
+
+            # Helper function for finding the start of a block (defined inline for simplicity)
+            def _find_block_start(lines: List[str], start_phrase: str) -> Optional[int]:
+                for i, line in enumerate(lines):
+                    if start_phrase in line:
+                        return i + 4
+                return None
+
+            # --- Mulliken Parsing ---
+            mulliken_charge_start = _find_block_start(lines, "Summary of the per-atom charge analysis:")
+            if mulliken_charge_start:
+                mulliken_charge_map = {}
+                for line in lines[mulliken_charge_start:]:
+                    if line.strip().startswith('| Total') or '---' in line or line.strip() == '': break
+                    match = re.search(r'\|\s*(\d+)\s+([-\d\.]+)\s+([-\d\.]+)', line)
+                    if match:
+                        mulliken_charge_map[int(match.group(1)) - 1] = float(match.group(3))
+                results['mulliken_charge'] = mulliken_charge_map
+
+            mulliken_spin_start = _find_block_start(lines, "Summary of the per-atom spin analysis:")
+            if mulliken_spin_start:
+                mulliken_spin_map = {}
+                for line in lines[mulliken_spin_start:]:
+                    if line.strip().startswith('| Total') or '---' in line or line.strip() == '': break
+                    match = re.search(r'\|\s*(\d+)\s+([-\d\.]+)', line)
+                    if match:
+                        mulliken_spin_map[int(match.group(1)) - 1] = float(match.group(2))
+                results['mulliken_spin'] = mulliken_spin_map
+
+            # --- Hirshfeld Parsing ---
+            hirshfeld_block_start = text.find("Performing Hirshfeld analysis")
+            if hirshfeld_block_start != -1:
+                hirshfeld_block = text[hirshfeld_block_start:]
+                hirshfeld_charge_map = {}
+                hirshfeld_spin_map = {}
+
+                atom_blocks = re.finditer(
+                    r'\| Atom\s+(\d+):\s*([A-Za-z]+).*?\|\s*Hirshfeld charge\s*:\s*([-\d\.]+).*?\|\s*Hirshfeld spin moment\s*:\s*([-\d\.]+)',
+                    hirshfeld_block, re.DOTALL)
+
+                for match in atom_blocks:
+                    atom_idx_0based = int(match.group(1)) - 1
+                    hirshfeld_charge_map[atom_idx_0based] = float(match.group(3))
+                    hirshfeld_spin_map[atom_idx_0based] = float(match.group(4))
+
+                results['hirshfeld_charge'] = hirshfeld_charge_map
+                results['hirshfeld_spin'] = hirshfeld_spin_map
+
+        except Exception as manual_err:
+            log.error(f"Manual parsing fallback also failed: {manual_err}")
+
+    # Final Validation and return (ensuring all properties were found)
+    if not results.get('mulliken_charge') and not results.get('hirshfeld_charge'):
+        log.warning(
+            "No atomic charges (Mulliken or Hirshfeld) could be parsed. "
+            "The calculation might be incomplete or the output file lacks the analysis blocks."
+        )
+
+    return results
+
+def calculate_property_difference(
+        data_polaron: Dict[int, float],
+        data_pristine: Dict[int, float],
+        site_indices: Union[int, List[int]],
+) -> Union[float, Dict[int, float]]:
+    """
+    Computes the difference (charged - pristine) for a property dictionary
+    at the given site index or indices.
+    """
+    is_list = isinstance(site_indices, list)
+    indices = site_indices if is_list else [site_indices]
+
+    if len(data_polaron) != len(data_pristine) or len(data_polaron) == 0:
+        raise ValueError("Charged and pristine data must have the same number of atoms and be non-empty.")
+
+    delta_results = {}
+
+    for index in indices:
+        if index not in data_polaron or index not in data_pristine:
+            raise IndexError(f"Index {index} not found in the parsed data (0-based).")
+
+        delta = data_polaron[index] - data_pristine[index]
+        delta_results[index] = delta
+
+    return delta_results if is_list else delta_results[indices[0]]

@@ -102,7 +102,7 @@ cd {workdir}
                 f"""\
                  #!/bin/bash
                  cd {workdir}
-                 {self.aims_executable_command} > aims.out 2>&1  
+                 {self.policy.aims_command} > aims.out 2>&1  
             """
             )
         script_path.write_text(content)
@@ -199,6 +199,7 @@ cd {workdir}
                             if potential_cube_charged.exists()
                             else None
                         ),
+                        log=self.log,
                     )
                     report["analysis"] = results
                 else:

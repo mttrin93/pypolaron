@@ -1,13 +1,12 @@
-import re
 import numpy as np
 from pathlib import Path
-from typing import Dict, Tuple, List, Optional, Any
+from typing import Dict, Tuple, List, Optional, Any, Union, Literal
 from ase.io.cube import read_cube
-import subprocess
-import os
+import logging
 
 from pypolaron.formation_energy_calculator import FormationEnergyCalculator
-from pypolaron.utils import parse_aims_total_energy
+from pypolaron.utils import parse_aims_total_energy, parse_aims_atomic_properties, \
+    calculate_property_difference
 
 
 class PolaronAnalyzer:
@@ -30,48 +29,6 @@ class PolaronAnalyzer:
         self.fermi_energy = fermi_energy
         self.volume_ang3 = volume_ang3
         self.exclude_radius = exclude_radius
-
-    def parse_aims_mulliken_population(self, aims_out_path: str) -> Dict[int, float]:
-        """
-        Parse Mulliken population table from FHI-aims output.
-        Returns dict mapping atom_index (0-based) -> population (float, number of electrons assigned to atom).
-        """
-        # TODO: write the same function but in the case of hirshfeld population
-        p = Path(aims_out_path)
-        text = p.read_text()
-        lines = text.splitlines()
-
-        # Find start of Mulliken block
-        start_idx = None
-        for i, line in enumerate(lines):
-            if "Summary of the per-atom charge analysis" in line:
-                start_idx = i
-                break
-        if start_idx is None:
-            # fallback: look for table with headers like "atom" and "electrons"
-            for i, line in enumerate(lines):
-                if re.search(r"^\s*\|?\s*atom\s+electrons", line, flags=re.IGNORECASE):
-                    start_idx = i
-                    break
-        if start_idx is None:
-            return {}  # no Mulliken block found
-
-        data = {}
-        for line in lines[start_idx + 2 :]:
-            if line.strip() == "" or "----" in line:
-                break
-            # extract atom index and electrons
-            cols = line.split()
-            if len(cols) < 3:
-                continue
-            try:
-                atom_idx = int(cols[1]) - 1  # convert 1-based to 0-based
-                electrons = float(cols[2])
-            except ValueError:
-                continue
-            data[atom_idx] = electrons
-
-        return data
 
     def read_aims_cube(
         self, file_path: str
@@ -107,140 +64,6 @@ class PolaronAnalyzer:
             atom_list[i, 1:4] = atom.position  # x, y, z in Angstrom
 
         return data, origin, axes, number_of_atoms, atom_list
-
-    # TODO: run Bader on spin densities
-    # TODO: add a mapping, sometimes the order of the atoms in ACF.dat is not the same as in the pymatgen structure!!!
-    def run_bader(
-        self,
-        charge_density_path: str,
-        output_dir: Optional[str] = None,
-        reference: Optional[str] = None,
-        bader_executable_path: Optional[str] = None,
-    ) -> Dict:
-        """
-        Run external 'bader' program (Henkelman) on a charge-density file.
-        Accepts CHGCAR or .cube (Gaussian cube) files. If 'reference' provided, passes -ref <reference>.
-        Returns parsed results as dict: { 'atom_charges': [q1, q2, ...], 'ACF': parsed_text, 'raw_stdout': ... }
-        Requires 'bader' binary on PATH.
-        """
-        p = Path(charge_density_path)
-        if not p.exists():
-            raise FileNotFoundError(
-                f"Charge density file not found: {charge_density_path}"
-            )
-
-        outdir = Path(output_dir) if output_dir else p.parent
-        outdir.mkdir(parents=True, exist_ok=True)
-
-        # --- add bader path to PATH if provided ---
-        if bader_executable_path:
-            os.environ["PATH"] = (
-                str(Path(bader_executable_path).parent)
-                + os.pathsep
-                + os.environ["PATH"]
-            )
-
-        cmd = [bader_executable_path or "bader", str(p)]
-        if reference:
-            cmd += ["-ref", str(reference)]
-        # run in output dir (bader writes ACF.dat / other files here)
-        try:
-            proc = subprocess.run(
-                cmd, cwd=str(outdir), capture_output=True, text=True, check=True
-            )
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"bader failed: {e.stderr}\nCommand: {' '.join(cmd)}")
-
-        # parse typical output: bader prints "Atom   Charge   ..."
-        # We will look for ACF.dat.
-        acf_path = outdir / "ACF.dat"
-        atomic_bader_charges = []
-        if acf_path.exists():
-            # ACf.dat typical format: index  x  y  z  charge  min_dist  atomic_vol
-            with open(acf_path, "r") as fh:
-                for line in fh:
-                    # Skip empty lines or separators
-                    if not line or line.startswith("#") or line.startswith("-"):
-                        continue
-                    # Skip footer lines (non-numeric first column)
-                    parts = line.split()
-                    if not parts[0].isdigit():
-                        continue
-                    try:
-                        # the charge column is at index 4
-                        charge_val = float(parts[4])
-                        atomic_bader_charges.append(charge_val)
-                    except (ValueError, IndexError):
-                        # skip malformed lines
-                        continue
-        else:
-            return {"warning": "ACF.dat not found; Bader analysis not possible"}
-
-        return {"atomic_charges": atomic_bader_charges, "acf_path": str(acf_path)}
-
-    def charge_difference_from_bader_analysis(
-        self,
-        pristine_cube_path: str,
-        charged_cube_path: str,
-        site_supercell_index: int,
-        bader_executable_path: Optional[str] = None,
-        tmp_dir: str = "./",
-    ) -> float:
-        """
-        Compute charge difference (charged - neutral) for a given atom index using Bader analysis.
-        Runs the external 'bader' program on the provided cube files.
-        Returns delta_charge: positive means more electrons in the charged calculation near the atom.
-        """
-        # TODO: here we calculate the differences in bader charges, try to calculate the difference in magmoms (charged - neutral)
-        # check if the code works when site_supercell_index is a list of ints
-
-        # --- run bader for both charge densities ---
-        bader_neutral = self.run_bader(
-            charge_density_path=pristine_cube_path,
-            output_dir=os.path.join(tmp_dir, "neutral"),
-            bader_executable_path=bader_executable_path,
-        )
-        bader_charged = self.run_bader(
-            charge_density_path=charged_cube_path,
-            output_dir=os.path.join(tmp_dir, "charged"),
-            bader_executable_path=bader_executable_path,
-        )
-
-        # --- extract atomic charges ---
-        charges_neutral = bader_neutral.get("atomic_charges", [])
-        charges_charged = bader_charged.get("atomic_charges", [])
-
-        if not charges_neutral or not charges_charged:
-            raise ValueError(
-                "Bader analysis failed to produce atomic charges for one or both cubes."
-            )
-
-        if len(charges_neutral) != len(charges_charged):
-            raise ValueError(
-                f"Number of atoms differ between neutral ({len(charges_neutral)}) and charged ({len(charges_charged)}) runs."
-            )
-
-        # --- compute charge difference for the selected atom ---
-        delta_q = (
-            charges_charged[site_supercell_index]
-            - charges_neutral[site_supercell_index]
-        )
-
-        return delta_q
-
-    # TODO: CHECK THIS FUNCTION
-    def compute_spin_ipr_from_spin_cube(self, spin_cube_path: str) -> float:
-        """
-        Approximate IPR from a spin-density cube: IPR = sum(rho^2) / (sum(rho))^2
-        This returns a single number for the entire cell; larger => more localized spin density.
-        """
-        grid, origin, axes, nat, atoms = self.read_aims_cube(spin_cube_path)
-        vals = grid.flatten()
-        s = np.sum(vals)
-        if abs(s) < 1e-12:
-            return 0.0
-        ipr = np.sum(vals**2) / (s**2)
-        return float(ipr)
 
     # TODO: CHECK THIS FUNCTION
     def potential_alignment(
@@ -285,6 +108,41 @@ class PolaronAnalyzer:
         # alignment to apply to energy: -q * delta_phi (but sign conventions vary). We'll return delta_phi = phi_ch - phi_neu
         return float(phi_c - phi_n)
 
+    def calculate_atomic_property_difference(
+            self,
+            pristine_data: Dict[str, Dict[int, float]],
+            polaron_data: Dict[str, Dict[int, float]],
+            site_indices: Union[int, List[int]],
+            property_key: Literal["mulliken_charges", "mulliken_spins", "hirshfeld_charges", "hirshfeld_spins"],
+    ) -> Union[float, Dict[int, float]]:
+        """
+        Computes the difference (charged - pristine) for a specified atomic property
+        (charge or spin moment) at the given site index(es).
+
+        Args:
+            pristine_data: results dictionary for prisitine run.
+            polaron_data: results dictionary for polaron run.
+            site_indices: The 0-based index (or list of indices) of the atom(s) to analyze.
+            property_key: The property to extract ('mulliken_charge', 'hirshfeld_spin', etc.).
+
+        Returns:
+            The difference value(s) (float or Dict[int, float]).
+        """
+
+        pristine_property_map = pristine_data.get(property_key, {})
+        charged_property_map = polaron_data.get(property_key, {})
+
+        if not pristine_property_map or not charged_property_map:
+            raise ValueError(f"Could not find or parse '{property_key}' data in one or both output files.")
+
+        delta = calculate_property_difference(
+            data_polaron=charged_property_map,
+            data_pristine=pristine_property_map,
+            site_indices=site_indices,
+        )
+
+        return delta
+
     def analyze_polaron_run(
         self,
         pristine_out: str,
@@ -292,6 +150,7 @@ class PolaronAnalyzer:
         atom_coords: np.ndarray,
         site_index_supercell: int,
         total_charge: int,
+        log: logging.Logger,
         pristine_cube_path: Optional[str] = None,
         charged_cube_path: Optional[str] = None,
         spin_cube: Optional[str] = None,
@@ -314,8 +173,8 @@ class PolaronAnalyzer:
         results = {}
 
         # --- Parse total energies ---
-        energy_pristine = self.parse_aims_total_energy(pristine_out)
-        energy_charged = self.parse_aims_total_energy(charged_out)
+        energy_pristine = parse_aims_total_energy(pristine_out)
+        energy_charged = parse_aims_total_energy(charged_out)
         results["E_pristine_eV"] = energy_pristine
         results["E_charged_eV"] = energy_charged
 
@@ -334,40 +193,56 @@ class PolaronAnalyzer:
         )
 
         # --- Mulliken populations
-        mulliken_pristine = self.parse_aims_mulliken_population(pristine_out)
-        mulliken_charged = self.parse_aims_mulliken_population(charged_out)
-        if mulliken_pristine and mulliken_charged:
-            population_pristine = mulliken_pristine.get(site_index_supercell)
-            population_charged = mulliken_charged.get(site_index_supercell)
+        pristine_atomic_properties_dict = parse_aims_atomic_properties(
+            aims_out_path=pristine_out,
+            log=log
+        )
 
-            results["mulliken_pristine"] = population_pristine
-            results["mulliken_charged"] = population_charged
+        polaron_atomic_properties_dict = parse_aims_atomic_properties(
+            aims_out_path=charged_out,
+            log=log
+        )
 
-            # Compute delta population (charged - pristine)
-            results["delta_mulliken_population"] = (
-                population_charged - population_pristine
+        if (hasattr(pristine_atomic_properties_dict, "mulliken_charges") and
+                hasattr(polaron_atomic_properties_dict, "mulliken_charges")):
+
+            delta_mulliken_charges = self.calculate_atomic_property_difference(
+                pristine_data=pristine_atomic_properties_dict,
+                polaron_data=polaron_atomic_properties_dict,
+                site_indices=site_index_supercell,
+                property_key="mulliken_charges",
             )
 
-        # approximate sphere integration (Bader-like)
-        if pristine_cube_path and charged_cube_path:
-            try:
-                delta_q = self.charge_difference_from_bader_analysis(
-                    pristine_cube_path=pristine_cube_path,
-                    charged_cube_path=charged_cube_path,
-                    bader_executable_path=bader_executable_path,
-                    site_supercell_index=site_index_supercell,
-                )
-                results["delta_charge_sphere_integral"] = delta_q
-            except Exception as e:
-                results["delta_charge_sphere_integral_error"] = str(e)
+            results["delta_mulliken_charges"] = delta_mulliken_charges
 
-        # spin IPR
-        if spin_cube:
-            try:
-                ipr = self.compute_spin_ipr_from_spin_cube(spin_cube)
-                results["spin_ipr"] = ipr
-            except Exception as e:
-                results["spin_ipr_error"] = str(e)
+            delta_mulliken_spins = self.calculate_atomic_property_difference(
+                pristine_data=pristine_atomic_properties_dict,
+                polaron_data=polaron_atomic_properties_dict,
+                site_indices=site_index_supercell,
+                property_key="mulliken_spins",
+            )
+
+            results["delta_mulliken_spins"] = delta_mulliken_spins
+
+        if (hasattr(pristine_atomic_properties_dict, "hirshfeld_charges") and
+                hasattr(polaron_atomic_properties_dict, "hirshfeld_charges")):
+            delta_hirshfeld_charges = self.calculate_atomic_property_difference(
+                pristine_data=pristine_atomic_properties_dict,
+                polaron_data=polaron_atomic_properties_dict,
+                site_indices=site_index_supercell,
+                property_key="hirshfeld_charges",
+            )
+
+            results["delta_hirshfeld_charges"] = delta_hirshfeld_charges
+
+            delta_hirshfeld_spins = self.calculate_atomic_property_difference(
+                pristine_data=pristine_atomic_properties_dict,
+                polaron_data=polaron_atomic_properties_dict,
+                site_indices=site_index_supercell,
+                property_key="hirshfeld_spins",
+            )
+
+            results["delta_hirshfeld_spins"] = delta_hirshfeld_spins
 
         # corrections
         corrections = {}

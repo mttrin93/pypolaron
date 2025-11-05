@@ -145,7 +145,6 @@ class PolaronAnalyzer:
 
         return delta
 
-    # TODO: this is for a single polaron, extend it to multiple polarons
     # TODO: add logs for polaron eigenvalues, distances to cbm, vbm -> to do in run_workflow below
     def analyze_polaron_localization(
             self,
@@ -215,37 +214,21 @@ class PolaronAnalyzer:
         analysis_results["E_Split_VBM_Down_eV"] = E_split_vbm_down
         analysis_results["E_Split_CBM_Down_eV"] = E_split_cbm_down
 
-        # --- Polaron Localization Determination ---
-        if gap_up is None and gap_down is None:
-            analysis_results["Localization_Channel"] = "Failed (No Eigenvalue data)"
-        elif gap_up is None:
-            analysis_results["Localization_Channel"] = "Spin Down (Spin Up data missing)"
-        elif gap_down is None:
-            analysis_results["Localization_Channel"] = "Spin Up (Spin Down data missing)"
+        if number_of_states_up !=0  and gap_up < localization_distance_threshold:
+            analysis_results["Warning_Up_Channel"] = (
+                f"Localization gap in the up channel ({gap_up:.3f} eV) is small. "
+                "The small polaron(s) may not be well-localized or may be delocalized in the structure."
+            )
         else:
-            # The polaron is localized in the channel where the largest split-off gap occurs.
-            # This state is typically the HOMO (for electron polaron) or LUMO (for hole polaron).
-            # Since the polaron is the last occupied state (HOMO), the split-off is HOMO vs HOMO-1.
+            analysis_results["Warning_Up_Channel"] = "The small polaron(s) is(are) well localized"
 
-            # Metric is the largest band edge split (either HOMO-1 to HOMO or HOMO to LUMO)
-            if gap_up > gap_down:
-                channel = "Spin Up"
-                largest_split = gap_up
-            else:
-                channel = "Spin Down"
-                largest_split = gap_down
-
-            analysis_results['Largest_Localization_Gap_eV'] = largest_split
-            analysis_results['Localization_Channel'] = channel
-
-            # --- Warning ---
-            if largest_split < localization_distance_threshold:
-                analysis_results['Warning'] = (
-                    f"Localization gap ({largest_split:.3f} eV) is small. "
-                    "The small polaron may not be well-localized or may be delocalized in the structure."
-                )
-            else:
-                analysis_results['Warning'] = "The small polaron is well localized"
+        if number_of_states_down !=0  and gap_down < localization_distance_threshold:
+            analysis_results["Warning_Down_Channel"] = (
+                f"Localization gap in the down channel ({gap_down:.3f} eV) is small. "
+                "The small polaron(s) may not be well-localized or may be delocalized in the structure."
+            )
+        else:
+            analysis_results["Warning_Down_Channel"] = "The small polaron(s) is(are) well localized"
 
         return analysis_results
 

@@ -686,11 +686,13 @@ def get_localization_metrics(
 
     energy_split_valence_band_maximum = 0.
     if polaron_type == "electron":
-        energy_HOMO_minus_number_of_polarons = sorted_data[homo_index - number_of_states][0] \
+        energy_HOMO_minus_number_of_polarons = sorted_data[homo_index - (number_of_states - 1)][0] \
             if homo_index > 0 else None
 
-        energy_valence_band = sorted_data[homo_index - number_of_states - 1][0] \
+        energy_valence_band = sorted_data[homo_index - number_of_states][0] \
             if homo_index > 0 else None
+
+        print("energy_valence_band", energy_valence_band, "energy_HOMO_minus_number_of_polarons", energy_HOMO_minus_number_of_polarons)
 
         energy_split_valence_band_maximum = energy_HOMO_minus_number_of_polarons - energy_valence_band \
             if (energy_HOMO_minus_number_of_polarons is not None and energy_valence_band is not None) else 0.0
@@ -727,7 +729,7 @@ def parse_total_spin_moment(aims_out_path: str) -> Optional[float]:
     p = Path(aims_out_path)
     text = p.read_text()
 
-    match = re.search(r"N\s*=\s*N_up\s*-\s*N_down\s*:\s*([-+]?\d*\.\d+|\d+)", text)
-    if match:
-        return float(match.group(1))
+    matches = re.findall(r"N\s*=\s*N_up\s*-\s*N_down\s*:\s*([-+]?\d*\.\d+|\d+)", text)
+    if matches:
+        return float(matches[-1])
     return None
